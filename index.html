@@ -41,6 +41,8 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;font
 .stat-card:hover{transform:scale(1.02);border-color:var(--muted2)}
 .stat-card.highlight{border-color:var(--red)}
 .stat-card.highlight::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--red)}
+.stat-card.selected-card{border-color:var(--red);background:rgba(229,9,20,.07);}
+.stat-card.selected-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--red)}
 .stat-label{font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
 .stat-amount{font-family:'Barlow Condensed',sans-serif;font-size:32px;font-weight:700;letter-spacing:-1px;line-height:1}
 .stat-amount.red{color:var(--red)}
@@ -350,51 +352,65 @@ function getPeriodRange(tid,mk){
   const d=new Date(y,m-1,1);const mkP=getMonthKey(d.getFullYear(),d.getMonth()-1);const dP=getCierreDia(tid,mkP);if(!dP)return null;
   return{desde:new Date(d.getFullYear(),d.getMonth()-1,dP+1),hasta:new Date(d.getFullYear(),d.getMonth(),dA)};
 }
-function buildAllPeriods(){
-  // Colectar todos los mk de cierres configurados
-  const allMks=new Set();
-  cierres.forEach(c=>allMks.add(c.mes_key));
-  const sorted=[...allMks].sort();
+let selectedTarjetaId=null;
 
+function buildAllPeriods(){
   const now=new Date();
   const mkNow=getMonthKey(now.getFullYear(),now.getMonth());
-
-  // Calcular mk de 2 meses atrás
   const d2back=new Date(now.getFullYear(),now.getMonth()-2,1);
   const mk2back=getMonthKey(d2back.getFullYear(),d2back.getMonth());
 
-  // Mk de 1 mes atrás
-  const d1back=new Date(now.getFullYear(),now.getMonth()-1,1);
-  const mk1back=getMonthKey(d1back.getFullYear(),d1back.getMonth());
+  // Mks del pasado reciente: vienen de cierres configurados (necesitamos cierre para saber el rango)
+  const mksDeCierres=new Set();
+  cierres.forEach(c=>mksDeCierres.add(c.mes_key));
 
-  // Períodos futuros que tengan al menos 1 gasto
-  const mkConGastos=new Set();
+  // Mks futuros: pueden venir de cuotas de gastos, aunque no tengan cierre configurado
+  // Los obtenemos directamente de la distribución de cada gasto
+  const mksConGastosFuturos=new Set();
   gastos.forEach(g=>{
+    // Calculamos distribución usando los cierres disponibles
     const dist=getCuotasPorPeriodo(g);
-    Object.keys(dist).forEach(mk=>{
-      if(mk>mkNow) mkConGastos.add(mk);
-    });
+    Object.keys(dist).forEach(mk=>{ if(mk>mkNow) mksConGastosFuturos.add(mk); });
+
+    // También chequeamos si la primera cuota cae en un mk futuro sin cierre:
+    // recorremos los mks derivados del gasto aunque no tengan cierre en la tabla
+    if(g.cuotas>1){
+      const mk0=getCierreForFecha(g.tarjeta_id,g.fecha);
+      if(mk0){
+        let mk=mk0;
+        for(let i=0;i<g.cuotas;i++){
+          if(mk>mkNow) mksConGastosFuturos.add(mk);
+          mk=nextMk(mk);
+        }
+      }
+    }
   });
 
-  // Construir lista final: 2 meses atrás + mes actual + futuros con gastos
-  // Solo incluir mks que estén en cierres configurados
   const resultado=new Set();
-  sorted.forEach(mk=>{
-    if(mk>=mk2back && mk<=mkNow) resultado.add(mk);  // 2 meses atrás hasta hoy
-    if(mk>mkNow && mkConGastos.has(mk)) resultado.add(mk); // futuros con gastos
+
+  // Pasado: solo mks con cierre configurado, desde 2 meses atrás hasta hoy
+  [...mksDeCierres].forEach(mk=>{
+    if(mk>=mk2back && mk<=mkNow) resultado.add(mk);
   });
+
+  // Futuros: todos los mks con gastos, tengan o no cierre
+  mksConGastosFuturos.forEach(mk=>resultado.add(mk));
 
   allPeriods=[...resultado].sort();
 }
 function setCurrentPeriod(){if(!allPeriods.length)return;const now=new Date();const mkN=getMonthKey(now.getFullYear(),now.getMonth());const idx=allPeriods.indexOf(mkN);currentPeriodIdx=idx>=0?idx:allPeriods.length-1;}
-function changePeriod(dir){currentPeriodIdx=Math.max(0,Math.min(allPeriods.length-1,currentPeriodIdx+dir));renderResumen();}
+function changePeriod(dir){currentPeriodIdx=Math.max(0,Math.min(allPeriods.length-1,currentPeriodIdx+dir));selectedTarjetaId=null;renderResumen();}
 function mkToLabel(mk){const[y,m]=mk.split('-').map(Number);return['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][m-1]+' '+y;}
 function mkToShort(mk){const[y,m]=mk.split('-').map(Number);return['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][m-1]+' '+y;}
 function renderResumen(){
   buildAllPeriods();
   const statsRow=document.getElementById('stats-row');const detailsEl=document.getElementById('tarjeta-details');
-  if(!tarjetas.length||!allPeriods.length){
-    document.getElementById('hero-period-title').textContent='—';document.getElementById('hero-period-sub').textContent='Configurá tus tarjetas y fechas de cierre';document.getElementById('period-label').textContent='—';
+  if(!tarjetas.length){
+    document.getElementById('hero-period-title').textContent='—';document.getElementById('hero-period-sub').textContent='Configurá tus tarjetas primero';document.getElementById('period-label').textContent='—';
+    statsRow.innerHTML='';detailsEl.innerHTML='<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Sin tarjetas configuradas</div></div>';return;
+  }
+  if(!allPeriods.length){
+    document.getElementById('hero-period-title').textContent='—';document.getElementById('hero-period-sub').textContent='Cargá gastos para ver períodos';document.getElementById('period-label').textContent='—';
     statsRow.innerHTML='';detailsEl.innerHTML='<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Sin datos aún</div></div>';return;
   }
   if(currentPeriodIdx>=allPeriods.length)currentPeriodIdx=allPeriods.length-1;
@@ -403,19 +419,89 @@ function renderResumen(){
   document.getElementById('hero-period-title').textContent=mkToLabel(mk);
   document.getElementById('hero-period-sub').textContent=esFuturo?'Período futuro — monto estimado':'Período cerrado o en curso';
   document.getElementById('period-label').textContent=mkToShort(mk);
+
+  // Calcular totales por tarjeta
   let totalGeneral=0;const perTarjeta=[];
-  tarjetas.forEach(t=>{let total=0;const gEP=[];gastos.forEach(g=>{if(g.tarjeta_id!==t.id)return;const dist=getCuotasPorPeriodo(g);if(dist[mk]){total+=dist[mk];gEP.push({g,monto:dist[mk]});}});totalGeneral+=total;perTarjeta.push({t,total,gEP,range:getPeriodRange(t.id,mk)});});
-  let sHTML=`<div class="stat-card highlight"><div class="stat-label">Total del período</div><div class="stat-amount ${esFuturo?'red':''}">$${fmt(totalGeneral)}</div><div class="stat-sub">${esFuturo?'📅 Estimado':'✅ Facturado'}</div></div>`;
-  perTarjeta.forEach(({t,total})=>{const pct=totalGeneral?Math.round(total/totalGeneral*100):0;sHTML+=`<div class="stat-card"><div class="stat-label"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${t.color};margin-right:6px;"></span>${t.banco}</div><div class="stat-amount" style="font-size:26px;">$${fmt(total)}</div><div class="stat-bar"><div class="stat-bar-fill" style="width:${pct}%;background:${t.color};"></div></div><div class="stat-pct">${pct}% del total</div></div>`;});
-  statsRow.innerHTML=sHTML;
-  let dHTML='';
-  perTarjeta.forEach(({t,total,gEP,range})=>{
-    if(!gEP.length&&!range)return;
-    const desde=range?formatDate(range.desde):'—';const hasta=range?formatDate(range.hasta):'—';
-    const rows=gEP.map(({g,monto})=>{const cn=Object.keys(getCuotasPorPeriodo(g)).sort().indexOf(mk)+1;const isSingle=g.cuotas===1;return`<tr><td><div style="font-weight:600;">${g.categoria?g.categoria+' ':''}${g.descripcion}</div>${g.nota?`<div style="color:var(--muted);font-size:11px;margin-top:2px;">${g.nota}</div>`:''}</td><td style="color:var(--muted);font-size:12px;">${formatDate(new Date(g.fecha+'T12:00:00'))}</td><td><span class="cuota-tag ${isSingle?'single':''}">${isSingle?'1 PAGO':`${cn}/${g.cuotas}`}</span></td><td style="font-weight:700;text-align:right;">$${fmt(monto)}</td></tr>`;}).join('');
-    dHTML+=`<div class="tarjeta-cards-section"><div class="tarjeta-detail"><div class="tarjeta-detail-header"><div class="td-left"><div class="td-stripe" style="background:${t.color};"></div><div><div class="td-bank">${t.banco} <span style="font-weight:400;color:var(--muted);font-size:14px;">— ${t.nombre}${t.digitos?' ···· '+t.digitos:''}</span></div><div class="td-info">Período: ${desde} → ${hasta}</div></div></div><div style="text-align:right;"><div class="td-amount" style="color:${esFuturo?'var(--red)':'var(--text)'};">$${fmt(total)}</div><div style="font-size:11px;color:var(--muted);">${esFuturo?'estimado':'facturado'}</div></div></div>${gEP.length?`<table class="data-table"><thead><tr><th>Concepto</th><th>Fecha compra</th><th>Cuotas</th><th style="text-align:right;">Monto</th></tr></thead><tbody>${rows}</tbody><tfoot><tr class="total-row"><td colspan="3">TOTAL TARJETA</td><td style="text-align:right;">$${fmt(total)}</td></tr></tfoot></table>`:'<div style="padding:20px 24px;color:var(--muted);font-size:13px;">Sin gastos en este período</div>'}</div></div>`;
+  tarjetas.forEach(t=>{
+    let total=0;const gEP=[];
+    gastos.forEach(g=>{if(g.tarjeta_id!==t.id)return;const dist=getCuotasPorPeriodo(g);if(dist[mk]){total+=dist[mk];gEP.push({g,monto:dist[mk]});}});
+    totalGeneral+=total;perTarjeta.push({t,total,gEP,range:getPeriodRange(t.id,mk)});
   });
-  detailsEl.innerHTML=dHTML||'<div class="empty-state"><div class="empty-icon">🎉</div><div class="empty-title">Sin gastos este período</div></div>';
+
+  // Stats row: total general + una card por tarjeta (clickeables)
+  // Resetear selección si cambió de período
+  if(selectedTarjetaId && !tarjetas.find(t=>t.id===selectedTarjetaId)) selectedTarjetaId=null;
+
+  let sHTML=`<div class="stat-card highlight"><div class="stat-label">Total del período</div><div class="stat-amount ${esFuturo?'red':''}">$${fmt(totalGeneral)}</div><div class="stat-sub">${esFuturo?'📅 Estimado':'✅ Facturado'}</div></div>`;
+  perTarjeta.forEach(({t,total})=>{
+    const pct=totalGeneral?Math.round(total/totalGeneral*100):0;
+    const isSelected=selectedTarjetaId===t.id;
+    sHTML+=`<div class="stat-card${isSelected?' selected-card':''}" style="cursor:pointer;" onclick="selectTarjetaDetail('${t.id}')">
+      <div class="stat-label"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${t.color};margin-right:6px;vertical-align:middle;"></span>${t.banco}</div>
+      <div class="stat-amount" style="font-size:26px;">$${fmt(total)}</div>
+      <div class="stat-bar"><div class="stat-bar-fill" style="width:${pct}%;background:${t.color};"></div></div>
+      <div class="stat-pct">${pct}% del total</div>
+      <div style="font-size:10px;color:${isSelected?'var(--red)':'var(--muted)'};margin-top:8px;letter-spacing:1px;font-weight:600;">${isSelected?'▲ VER MENOS':'▼ VER DETALLE'}</div>
+    </div>`;
+  });
+  statsRow.innerHTML=sHTML;
+
+  // Detalle: solo la tarjeta seleccionada
+  renderTarjetaDetail(mk,esFuturo,perTarjeta,detailsEl);
+}
+
+function selectTarjetaDetail(tid){
+  selectedTarjetaId=(selectedTarjetaId===tid)?null:tid; // toggle
+  renderResumen();
+}
+
+function renderTarjetaDetail(mk,esFuturo,perTarjeta,detailsEl){
+  if(!selectedTarjetaId){
+    detailsEl.innerHTML='<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px;">👆 Seleccioná una tarjeta para ver el detalle de sus gastos</div>';
+    return;
+  }
+  const item=perTarjeta.find(x=>x.t.id===selectedTarjetaId);
+  if(!item){detailsEl.innerHTML='';return;}
+  const{t,total,gEP,range}=item;
+  const desde=range?formatDate(range.desde):'—';
+  const hasta=range?formatDate(range.hasta):'—';
+  const hasCierre=!!(range);
+  const rows=gEP.map(({g,monto})=>{
+    const cn=Object.keys(getCuotasPorPeriodo(g)).sort().indexOf(mk)+1;
+    const isSingle=g.cuotas===1;
+    return`<tr>
+      <td><div style="font-weight:600;">${g.categoria?g.categoria+' ':''}${g.descripcion}</div>${g.nota?`<div style="color:var(--muted);font-size:11px;margin-top:2px;">${g.nota}</div>`:''}</td>
+      <td style="color:var(--muted);font-size:12px;">${formatDate(new Date(g.fecha+'T12:00:00'))}</td>
+      <td><span class="cuota-tag ${isSingle?'single':''}">${isSingle?'1 PAGO':`${cn}/${g.cuotas}`}</span></td>
+      <td style="font-weight:700;text-align:right;">$${fmt(monto)}</td>
+    </tr>`;
+  }).join('');
+
+  detailsEl.innerHTML=`<div class="tarjeta-cards-section">
+    <div class="tarjeta-detail" style="border-color:${t.color}40;">
+      <div class="tarjeta-detail-header">
+        <div class="td-left">
+          <div class="td-stripe" style="background:${t.color};"></div>
+          <div>
+            <div class="td-bank">${t.banco} <span style="font-weight:400;color:var(--muted);font-size:14px;">— ${t.nombre}${t.digitos?' ···· '+t.digitos:''}</span></div>
+            <div class="td-info">${hasCierre?`Período: ${desde} → ${hasta}`:'<span style="color:var(--red);">⚠ Sin fecha de cierre configurada para este período</span>'}</div>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div class="td-amount" style="color:${esFuturo?'var(--red)':'var(--text)'};">$${fmt(total)}</div>
+          <div style="font-size:11px;color:var(--muted);">${esFuturo?'estimado':'facturado'}</div>
+        </div>
+      </div>
+      ${gEP.length
+        ?`<table class="data-table">
+            <thead><tr><th>Concepto</th><th>Fecha compra</th><th>Cuotas</th><th style="text-align:right;">Monto</th></tr></thead>
+            <tbody>${rows}</tbody>
+            <tfoot><tr class="total-row"><td colspan="3">TOTAL TARJETA</td><td style="text-align:right;">$${fmt(total)}</td></tr></tfoot>
+          </table>`
+        :`<div style="padding:20px 24px;color:var(--muted);font-size:13px;">Sin gastos en este período</div>`
+      }
+    </div>
+  </div>`;
 }
 function renderGastos(){
   const tbody=document.getElementById('gastos-tbody');const empty=document.getElementById('gastos-empty');const now=new Date();
