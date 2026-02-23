@@ -202,7 +202,7 @@ select option{background:var(--surface2)}
     </div>
     <div class="gastos-table-wrap">
       <table class="data-table">
-        <thead><tr><th>Descripción</th><th>Tarjeta</th><th>Fecha</th><th>Monto total</th><th>Cuotas</th><th></th></tr></thead>
+        <thead><tr><th>Descripción</th><th>Tarjeta</th><th>Fecha</th><th>Monto total</th><th>Cuotas</th><th style="width:90px;"></th></tr></thead>
         <tbody id="gastos-tbody"></tbody>
       </table>
       <div id="gastos-empty" class="empty-state" style="display:none;">
@@ -268,7 +268,7 @@ select option{background:var(--surface2)}
 <div class="modal-overlay" id="modal-gasto">
   <div class="modal">
     <div class="modal-header">
-      <div><div class="modal-eyebrow">NUEVO GASTO</div><div class="modal-title">Registrar compra</div></div>
+      <div><div class="modal-eyebrow" id="modal-gasto-eyebrow">NUEVO GASTO</div><div class="modal-title" id="modal-gasto-title">Registrar compra</div></div>
       <button class="modal-close" onclick="closeModal('modal-gasto')">×</button>
     </div>
     <div class="form-grid">
@@ -311,7 +311,7 @@ const SUPABASE_URL='https://ndiunufkwvgyrbtqctwp.supabase.co';
 const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kaXVudWZrd3ZneXJidHFjdHdwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2MDE3NDksImV4cCI6MjA4NzE3Nzc0OX0.jwry-uF9hstCHLrQyq4OfeGfarsxBaxich6enVOLR2U';
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 let tarjetas=[],cierres=[],gastos=[];
-let selectedColor='#e50914',editingTarjetaId=null,gastoFilter='todos';
+let selectedColor='#e50914',editingTarjetaId=null,editingGastoId=null,gastoFilter='todos';
 let allPeriods=[],currentPeriodIdx=0;
 window.addEventListener('scroll',()=>document.getElementById('topbar').classList.toggle('scrolled',scrollY>10));
 async function init(){
@@ -350,7 +350,42 @@ function getPeriodRange(tid,mk){
   const d=new Date(y,m-1,1);const mkP=getMonthKey(d.getFullYear(),d.getMonth()-1);const dP=getCierreDia(tid,mkP);if(!dP)return null;
   return{desde:new Date(d.getFullYear(),d.getMonth()-1,dP+1),hasta:new Date(d.getFullYear(),d.getMonth(),dA)};
 }
-function buildAllPeriods(){const s=new Set();cierres.forEach(c=>s.add(c.mes_key));allPeriods=[...s].sort();}
+function buildAllPeriods(){
+  // Colectar todos los mk de cierres configurados
+  const allMks=new Set();
+  cierres.forEach(c=>allMks.add(c.mes_key));
+  const sorted=[...allMks].sort();
+
+  const now=new Date();
+  const mkNow=getMonthKey(now.getFullYear(),now.getMonth());
+
+  // Calcular mk de 2 meses atrás
+  const d2back=new Date(now.getFullYear(),now.getMonth()-2,1);
+  const mk2back=getMonthKey(d2back.getFullYear(),d2back.getMonth());
+
+  // Mk de 1 mes atrás
+  const d1back=new Date(now.getFullYear(),now.getMonth()-1,1);
+  const mk1back=getMonthKey(d1back.getFullYear(),d1back.getMonth());
+
+  // Períodos futuros que tengan al menos 1 gasto
+  const mkConGastos=new Set();
+  gastos.forEach(g=>{
+    const dist=getCuotasPorPeriodo(g);
+    Object.keys(dist).forEach(mk=>{
+      if(mk>mkNow) mkConGastos.add(mk);
+    });
+  });
+
+  // Construir lista final: 2 meses atrás + mes actual + futuros con gastos
+  // Solo incluir mks que estén en cierres configurados
+  const resultado=new Set();
+  sorted.forEach(mk=>{
+    if(mk>=mk2back && mk<=mkNow) resultado.add(mk);  // 2 meses atrás hasta hoy
+    if(mk>mkNow && mkConGastos.has(mk)) resultado.add(mk); // futuros con gastos
+  });
+
+  allPeriods=[...resultado].sort();
+}
 function setCurrentPeriod(){if(!allPeriods.length)return;const now=new Date();const mkN=getMonthKey(now.getFullYear(),now.getMonth());const idx=allPeriods.indexOf(mkN);currentPeriodIdx=idx>=0?idx:allPeriods.length-1;}
 function changePeriod(dir){currentPeriodIdx=Math.max(0,Math.min(allPeriods.length-1,currentPeriodIdx+dir));renderResumen();}
 function mkToLabel(mk){const[y,m]=mk.split('-').map(Number);return['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][m-1]+' '+y;}
@@ -389,15 +424,35 @@ function renderGastos(){
   else if(gastoFilter==='pasados')lista=lista.filter(g=>{const mks=Object.keys(getCuotasPorPeriodo(g)).sort();if(!mks.length)return false;const[y,m]=mks[mks.length-1].split('-').map(Number);return new Date(y,m-1,28)<now;});
   if(!lista.length){tbody.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
-  tbody.innerHTML=lista.map(g=>{const t=tarjetas.find(t=>t.id===g.tarjeta_id);return`<tr><td><div style="font-weight:600;">${g.categoria?g.categoria+' ':''}${g.descripcion}</div>${g.nota?`<div style="color:var(--muted);font-size:11px;margin-top:2px;">${g.nota}</div>`:''}</td><td>${t?`<span class="cc-badge" style="background:${t.color}">${t.banco}</span>`:'—'}</td><td style="color:var(--muted);">${formatDate(new Date(g.fecha+'T12:00:00'))}</td><td style="font-weight:700;">$${fmt(g.monto)}</td><td style="color:var(--muted);">${g.cuotas>1?`${g.cuotas}x $${fmt(g.monto/g.cuotas)}`:'1 pago'}</td><td><button class="btn btn-danger-sm" onclick="deleteGasto('${g.id}')">✕</button></td></tr>`;}).join('');
+  tbody.innerHTML=lista.map(g=>{const t=tarjetas.find(t=>t.id===g.tarjeta_id);return`<tr><td><div style="font-weight:600;">${g.categoria?g.categoria+' ':''}${g.descripcion}</div>${g.nota?`<div style="color:var(--muted);font-size:11px;margin-top:2px;">${g.nota}</div>`:''}</td><td>${t?`<span class="cc-badge" style="background:${t.color}">${t.banco}</span>`:'—'}</td><td style="color:var(--muted);">${formatDate(new Date(g.fecha+'T12:00:00'))}</td><td style="font-weight:700;">$${fmt(g.monto)}</td><td style="color:var(--muted);">${g.cuotas>1?`${g.cuotas}x $${fmt(g.monto/g.cuotas)}`:'1 pago'}</td><td style="display:flex;gap:6px;align-items:center;"><button class="btn btn-ghost btn-sm" style="font-size:11px;padding:5px 10px;" onclick="openModalEditGasto('${g.id}')">✏️</button><button class="btn btn-danger-sm" onclick="deleteGasto('${g.id}')">✕</button></td></tr>`;}).join('');
 }
 function filterGastos(f,el){gastoFilter=f;document.querySelectorAll('.filter-tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');renderGastos();}
 function openModalGasto(){
   if(!tarjetas.length){showToast('Primero agregá una tarjeta','error');return;}
+  editingGastoId=null;
+  document.getElementById('modal-gasto-eyebrow').textContent='NUEVO GASTO';
+  document.getElementById('modal-gasto-title').textContent='Registrar compra';
+  document.getElementById('btn-save-gasto').textContent='Registrar';
   document.getElementById('g-tarjeta').innerHTML=tarjetas.map(t=>`<option value="${t.id}">${t.banco} – ${t.nombre}</option>`).join('');
   document.getElementById('g-fecha').value=new Date().toISOString().split('T')[0];
   ['g-monto','g-desc','g-nota'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('g-cuotas').value=1;document.getElementById('g-categoria').value='';document.getElementById('cuotas-preview').style.display='none';
+  openModal('modal-gasto');
+}
+function openModalEditGasto(id){
+  const g=gastos.find(g=>g.id===id);if(!g)return;
+  editingGastoId=id;
+  document.getElementById('modal-gasto-eyebrow').textContent='EDITAR GASTO';
+  document.getElementById('modal-gasto-title').textContent='Modificar compra';
+  document.getElementById('btn-save-gasto').textContent='Guardar cambios';
+  document.getElementById('g-tarjeta').innerHTML=tarjetas.map(t=>`<option value="${t.id}"${t.id===g.tarjeta_id?' selected':''}>${t.banco} – ${t.nombre}</option>`).join('');
+  document.getElementById('g-desc').value=g.descripcion;
+  document.getElementById('g-fecha').value=g.fecha;
+  document.getElementById('g-monto').value=g.monto;
+  document.getElementById('g-cuotas').value=g.cuotas;
+  document.getElementById('g-categoria').value=g.categoria||'';
+  document.getElementById('g-nota').value=g.nota||'';
+  previewCuotas();
   openModal('modal-gasto');
 }
 function previewCuotas(){
@@ -415,10 +470,18 @@ async function saveGasto(){
   const fecha=document.getElementById('g-fecha').value;const monto=parseFloat(document.getElementById('g-monto').value);
   const cuotas=parseInt(document.getElementById('g-cuotas').value)||1;const categoria=document.getElementById('g-categoria').value;const nota=document.getElementById('g-nota').value.trim();
   if(!descripcion){showToast('Ingresá una descripción','error');return;}if(!fecha){showToast('Ingresá la fecha','error');return;}if(!monto||monto<=0){showToast('Ingresá un monto válido','error');return;}
-  const btn=document.getElementById('btn-save-gasto');btn.disabled=true;btn.innerHTML='<div class="loader"></div> Guardando...';
-  const{data,error}=await sb.from('gastos').insert([{descripcion,tarjeta_id,fecha,monto,cuotas,categoria,nota}]).select();
-  if(error){showToast('Error al guardar','error');}else{gastos.unshift(data[0]);closeModal('modal-gasto');renderGastos();buildAllPeriods();showToast('Gasto registrado ✓');}
-  btn.disabled=false;btn.innerHTML='Registrar';
+  const btn=document.getElementById('btn-save-gasto');
+  const isEditing=!!editingGastoId;
+  btn.disabled=true;btn.innerHTML='<div class="loader"></div> Guardando...';
+  if(isEditing){
+    const{data,error}=await sb.from('gastos').update({descripcion,tarjeta_id,fecha,monto,cuotas,categoria,nota}).eq('id',editingGastoId).select();
+    if(error){showToast('Error al actualizar','error');}
+    else{const idx=gastos.findIndex(g=>g.id===editingGastoId);if(idx>=0)gastos[idx]=data[0];closeModal('modal-gasto');renderGastos();buildAllPeriods();showToast('Gasto actualizado ✓');}
+  }else{
+    const{data,error}=await sb.from('gastos').insert([{descripcion,tarjeta_id,fecha,monto,cuotas,categoria,nota}]).select();
+    if(error){showToast('Error al guardar','error');}else{gastos.unshift(data[0]);closeModal('modal-gasto');renderGastos();buildAllPeriods();showToast('Gasto registrado ✓');}
+  }
+  btn.disabled=false;btn.innerHTML=isEditing?'Guardar cambios':'Registrar';
 }
 async function deleteGasto(id){
   if(!confirm('¿Eliminar este gasto?'))return;
