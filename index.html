@@ -336,65 +336,76 @@ function showPage(name,el){
 function getMonthKey(y,m){return`${y}-${String(m+1).padStart(2,'0')}`;}
 function nextMk(mk){const[y,m]=mk.split('-').map(Number);const d=new Date(y,m,1);return getMonthKey(d.getFullYear(),d.getMonth());}
 function getCierreDia(tid,mk){const c=cierres.find(c=>c.tarjeta_id===tid&&c.mes_key===mk);return c?c.dia:null;}
+
+// Devuelve el mk del período al que pertenece la fecha de compra para una tarjeta.
+// Si hay cierre configurado: el primer mes cuyo cierre cae DESPUÉS de la fecha de compra.
+// Si NO hay cierre configurado para ningún mes futuro: usa el mes de la fecha de compra directamente.
 function getCierreForFecha(tid,fechaStr){
   const fc=new Date(fechaStr+'T12:00:00');
-  for(let i=0;i<24;i++){const d=new Date(fc.getFullYear(),fc.getMonth()+i,1);const mk=getMonthKey(d.getFullYear(),d.getMonth());const dia=getCierreDia(tid,mk);if(!dia)continue;if(new Date(d.getFullYear(),d.getMonth(),dia)>=fc)return mk;}
-  return null;
+  // Intentar con cierres configurados primero (hasta 36 meses adelante)
+  for(let i=0;i<36;i++){
+    const d=new Date(fc.getFullYear(),fc.getMonth()+i,1);
+    const mk=getMonthKey(d.getFullYear(),d.getMonth());
+    const dia=getCierreDia(tid,mk);
+    if(!dia) continue;
+    if(new Date(d.getFullYear(),d.getMonth(),dia)>=fc) return mk;
+  }
+  // Fallback: usar el mes de la fecha de compra como primer período
+  return getMonthKey(fc.getFullYear(),fc.getMonth());
 }
+
+// Distribuye las cuotas en mks mensuales consecutivos a partir del mk inicial.
+// Avanza mes a mes independientemente de si hay cierres configurados.
 function getCuotasPorPeriodo(g){
-  const r={};const mk0=getCierreForFecha(g.tarjeta_id,g.fecha);if(!mk0)return r;
-  const cm=g.monto/g.cuotas;let mk=mk0;
-  for(let i=0;i<g.cuotas;i++){r[mk]=(r[mk]||0)+cm;mk=nextMk(mk);}
+  const r={};
+  const mk0=getCierreForFecha(g.tarjeta_id,g.fecha);
+  if(!mk0) return r;
+  const cm=g.monto/g.cuotas;
+  let mk=mk0;
+  for(let i=0;i<g.cuotas;i++){
+    r[mk]=(r[mk]||0)+cm;
+    mk=nextMk(mk);
+  }
   return r;
 }
+
+// Devuelve el rango desde/hasta del período. Si no hay cierre configurado,
+// aproxima con el mes completo (día 1 al último día del mes).
 function getPeriodRange(tid,mk){
-  const[y,m]=mk.split('-').map(Number);const dA=getCierreDia(tid,mk);if(!dA)return null;
-  const d=new Date(y,m-1,1);const mkP=getMonthKey(d.getFullYear(),d.getMonth()-1);const dP=getCierreDia(tid,mkP);if(!dP)return null;
-  return{desde:new Date(d.getFullYear(),d.getMonth()-1,dP+1),hasta:new Date(d.getFullYear(),d.getMonth(),dA)};
+  const[y,m]=mk.split('-').map(Number);
+  const dA=getCierreDia(tid,mk);
+  const d=new Date(y,m-1,1);
+  const mkP=getMonthKey(d.getFullYear(),d.getMonth()-1);
+  const dP=getCierreDia(tid,mkP);
+  // Si tenemos ambos cierres, rango exacto
+  if(dA && dP) return{desde:new Date(d.getFullYear(),d.getMonth()-1,dP+1),hasta:new Date(d.getFullYear(),d.getMonth(),dA),exacto:true};
+  // Fallback: mes calendario completo
+  const primerDia=new Date(y,m-1,1);
+  const ultimoDia=new Date(y,m,0); // día 0 del mes siguiente = último día del mes actual
+  return{desde:primerDia,hasta:ultimoDia,exacto:false};
 }
 let selectedTarjetaId=null;
 
 function buildAllPeriods(){
   const now=new Date();
   const mkNow=getMonthKey(now.getFullYear(),now.getMonth());
-  const d2back=new Date(now.getFullYear(),now.getMonth()-2,1);
-  const mk2back=getMonthKey(d2back.getFullYear(),d2back.getMonth());
-
-  // Mks del pasado reciente: vienen de cierres configurados (necesitamos cierre para saber el rango)
-  const mksDeCierres=new Set();
-  cierres.forEach(c=>mksDeCierres.add(c.mes_key));
-
-  // Mks futuros: pueden venir de cuotas de gastos, aunque no tengan cierre configurado
-  // Los obtenemos directamente de la distribución de cada gasto
-  const mksConGastosFuturos=new Set();
-  gastos.forEach(g=>{
-    // Calculamos distribución usando los cierres disponibles
-    const dist=getCuotasPorPeriodo(g);
-    Object.keys(dist).forEach(mk=>{ if(mk>mkNow) mksConGastosFuturos.add(mk); });
-
-    // También chequeamos si la primera cuota cae en un mk futuro sin cierre:
-    // recorremos los mks derivados del gasto aunque no tengan cierre en la tabla
-    if(g.cuotas>1){
-      const mk0=getCierreForFecha(g.tarjeta_id,g.fecha);
-      if(mk0){
-        let mk=mk0;
-        for(let i=0;i<g.cuotas;i++){
-          if(mk>mkNow) mksConGastosFuturos.add(mk);
-          mk=nextMk(mk);
-        }
-      }
-    }
-  });
+  const mk2back=getMonthKey(now.getFullYear(),now.getMonth()-2);
 
   const resultado=new Set();
 
-  // Pasado: solo mks con cierre configurado, desde 2 meses atrás hasta hoy
-  [...mksDeCierres].forEach(mk=>{
-    if(mk>=mk2back && mk<=mkNow) resultado.add(mk);
+  // Pasado: mks con cierre configurado en los últimos 2 meses (necesitamos cierre para período exacto)
+  cierres.forEach(c=>{
+    if(c.mes_key>=mk2back && c.mes_key<=mkNow) resultado.add(c.mes_key);
   });
 
-  // Futuros: todos los mks con gastos, tengan o no cierre
-  mksConGastosFuturos.forEach(mk=>resultado.add(mk));
+  // Siempre incluir el mes actual si hay cierres
+  // Futuros: todos los mks de cuotas de todos los gastos que caigan después de hoy
+  gastos.forEach(g=>{
+    const dist=getCuotasPorPeriodo(g);
+    Object.keys(dist).forEach(mk=>{
+      if(mk>mkNow) resultado.add(mk);
+    });
+  });
 
   allPeriods=[...resultado].sort();
 }
@@ -463,9 +474,9 @@ function renderTarjetaDetail(mk,esFuturo,perTarjeta,detailsEl){
   const item=perTarjeta.find(x=>x.t.id===selectedTarjetaId);
   if(!item){detailsEl.innerHTML='';return;}
   const{t,total,gEP,range}=item;
-  const desde=range?formatDate(range.desde):'—';
-  const hasta=range?formatDate(range.hasta):'—';
-  const hasCierre=!!(range);
+  const desde=formatDate(range.desde);
+  const hasta=formatDate(range.hasta);
+  const rangoLabel=range.exacto?`${desde} → ${hasta}`:`${desde} → ${hasta} <span style="color:var(--muted);font-size:11px;">(sin cierre configurado)</span>`;
   const rows=gEP.map(({g,monto})=>{
     const cn=Object.keys(getCuotasPorPeriodo(g)).sort().indexOf(mk)+1;
     const isSingle=g.cuotas===1;
@@ -484,7 +495,7 @@ function renderTarjetaDetail(mk,esFuturo,perTarjeta,detailsEl){
           <div class="td-stripe" style="background:${t.color};"></div>
           <div>
             <div class="td-bank">${t.banco} <span style="font-weight:400;color:var(--muted);font-size:14px;">— ${t.nombre}${t.digitos?' ···· '+t.digitos:''}</span></div>
-            <div class="td-info">${hasCierre?`Período: ${desde} → ${hasta}`:'<span style="color:var(--red);">⚠ Sin fecha de cierre configurada para este período</span>'}</div>
+            <div class="td-info">Período: ${rangoLabel}</div>
           </div>
         </div>
         <div style="text-align:right;">
