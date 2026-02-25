@@ -553,6 +553,75 @@ select option{background:var(--bg2);color:var(--text);}
   .col-fecha{display:none;}
 }
 
+/* ══════════ RESUMEN TOP ROW ══════════ */
+.resumen-top-row{
+  display:flex;align-items:stretch;gap:16px;
+  margin-bottom:24px;flex-wrap:wrap;
+}
+.resumen-top-row .period-nav{
+  margin-bottom:0;flex-shrink:0;
+}
+
+/* Total aside card */
+.total-aside-card{
+  flex:1;min-width:220px;
+  background:linear-gradient(145deg,rgba(124,58,237,.18),rgba(99,102,241,.1));
+  border:1px solid rgba(124,58,237,.35);
+  border-radius:var(--r-xl);
+  padding:18px 28px;
+  display:flex;flex-direction:column;justify-content:center;
+  position:relative;overflow:hidden;
+  box-shadow:0 4px 24px rgba(124,58,237,.15);
+}
+.total-aside-card::before{
+  content:'';position:absolute;top:-40px;right:-40px;
+  width:160px;height:160px;border-radius:50%;
+  background:radial-gradient(circle,rgba(124,58,237,.25),transparent 70%);
+  pointer-events:none;
+}
+.total-aside-card::after{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:var(--grad-h);
+}
+.total-aside-card.future{
+  background:linear-gradient(145deg,rgba(16,185,129,.15),rgba(6,182,212,.08));
+  border-color:rgba(16,185,129,.3);
+  box-shadow:0 4px 24px rgba(16,185,129,.12);
+}
+.total-aside-card.future::after{
+  background:linear-gradient(90deg,var(--em),var(--c2));
+}
+.tac-label{
+  font-size:10px;font-weight:700;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--v3);margin-bottom:8px;
+}
+.total-aside-card.future .tac-label{color:var(--em2);}
+.tac-amount{
+  font-family:'DM Mono',monospace;font-size:36px;font-weight:500;
+  letter-spacing:-1px;line-height:1;color:var(--text);
+}
+.tac-amount.future{
+  background:linear-gradient(90deg,var(--em),var(--c2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.tac-badge{font-size:12px;color:var(--text3);margin-top:8px;}
+
+/* Stat card inner layout */
+.sc-card-header{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
+.sc-dot-wrap{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.sc-names{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;}
+.sc-nombre{
+  font-family:'Outfit',sans-serif;font-size:16px;font-weight:800;
+  color:var(--text);letter-spacing:-.2px;line-height:1.1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.sc-banco{font-size:11px;color:var(--text3);font-weight:500;letter-spacing:.2px;}
+.sc-footer{display:flex;align-items:center;justify-content:space-between;margin-top:10px;}
+.sc-pct{font-size:11px;color:var(--text3);}
+
+/* Remove old .sc-label margin-bottom since we're using sc-card-header now */
+.stat-card .sc-label{margin-bottom:0;}
+
 /* ══════════ MOBILE NAV OVERRIDE (keep correct hidden cols) ══════════ */
 .mobile-nav{
   display:none;position:fixed;bottom:0;left:0;right:0;z-index:100;
@@ -604,6 +673,9 @@ select option{background:var(--bg2);color:var(--text);}
   .topbar-actions{flex-wrap:wrap;}
   .period-nav{width:100%;}
   .period-mid{flex:1;}
+  .resumen-top-row{flex-direction:column;}
+  .total-aside-card{padding:16px 20px;}
+  .tac-amount{font-size:28px;}
 }
 @media(max-width:480px){
   .stats-grid{grid-template-columns:1fr;}
@@ -683,14 +755,19 @@ select option{background:var(--bg2);color:var(--text);}
 
       <!-- ══ RESUMEN ══ -->
       <div class="page active" id="page-resumen">
-        <div class="period-nav">
-          <button class="period-arrow" onclick="changePeriod(-1)">‹</button>
-          <div class="period-mid">
-            <div class="period-month" id="period-month">—</div>
-            <div class="period-tag" id="period-tag">—</div>
+        <!-- Fila superior: navegador de período + total del período -->
+        <div class="resumen-top-row">
+          <div class="period-nav">
+            <button class="period-arrow" onclick="changePeriod(-1)">‹</button>
+            <div class="period-mid">
+              <div class="period-month" id="period-month">—</div>
+              <div class="period-tag" id="period-tag">—</div>
+            </div>
+            <button class="period-arrow" onclick="changePeriod(1)">›</button>
           </div>
-          <button class="period-arrow" onclick="changePeriod(1)">›</button>
+          <div id="total-card-wrap"></div>
         </div>
+        <!-- Grid de tarjetas -->
         <div class="stats-grid" id="stats-grid"></div>
         <div id="detail-area"></div>
       </div>
@@ -1051,6 +1128,7 @@ function renderResumen(){
   if(!tarjetas.length){
     document.getElementById('period-month').textContent='—';
     document.getElementById('period-tag').textContent='—';
+    document.getElementById('total-card-wrap').innerHTML='';
     statsEl.innerHTML='';
     detailEl.innerHTML='<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Sin tarjetas</div><div class="empty-sub">Andá a Tarjetas y configurá las tuyas</div></div>';
     return;
@@ -1058,6 +1136,7 @@ function renderResumen(){
   if(!allPeriods.length){
     document.getElementById('period-month').textContent='—';
     document.getElementById('period-tag').textContent='Sin períodos';
+    document.getElementById('total-card-wrap').innerHTML='';
     statsEl.innerHTML='';
     detailEl.innerHTML='<div class="empty-state"><div class="empty-icon">📅</div><div class="empty-title">Sin períodos</div><div class="empty-sub">Configurá fechas de cierre o cargá gastos</div></div>';
     return;
@@ -1085,22 +1164,35 @@ function renderResumen(){
     return{t,total,gEP,range:getPeriodRange(t.id,mk)};
   });
 
-  // Stats cards
-  let sHTML=`<div class="stat-card total">
-    <div class="sc-label">Total período</div>
-    <div class="sc-amount${esFuturo?' future':''}">$${fmt(totalGeneral)}</div>
-    <div class="sc-sub">${esFuturo?'📅 Monto estimado':'✅ Monto facturado'}</div>
+  // Total card — separado, va al lado del period nav
+  const totalWrap=document.getElementById('total-card-wrap');
+  totalWrap.innerHTML=`<div class="total-aside-card${esFuturo?' future':''}">
+    <div class="tac-label">Total del período</div>
+    <div class="tac-amount${esFuturo?' future':''}">$${fmt(totalGeneral)}</div>
+    <div class="tac-badge">${esFuturo?'📅 Estimado':'✅ Facturado'}</div>
   </div>`;
 
+  // Cards por tarjeta
+  let sHTML='';
   perTarjeta.forEach(({t,total})=>{
     const pct=totalGeneral?Math.round(total/totalGeneral*100):0;
     const isSel=selectedTarjetaId===t.id;
     sHTML+=`<div class="stat-card clickable${isSel?' selected':''}" onclick="selectCard('${t.id}')">
-      <div class="sc-label"><span class="sc-dot" style="background:${t.color}"></span>${t.banco}</div>
+      <div class="sc-card-header">
+        <div class="sc-dot-wrap" style="background:${t.color}25;box-shadow:inset 0 0 0 1px ${t.color}50;">
+          <div style="width:12px;height:12px;border-radius:50%;background:${t.color};box-shadow:0 0 10px ${t.color}90;"></div>
+        </div>
+        <div class="sc-names">
+          <div class="sc-nombre">${t.nombre}</div>
+          <div class="sc-banco">${t.banco}</div>
+        </div>
+      </div>
       <div class="sc-amount${esFuturo?' future':''}">$${fmt(total)}</div>
       <div class="sc-bar"><div class="sc-bar-fill" style="width:${pct}%;background:${t.color}"></div></div>
-      <div class="sc-sub">${pct}% del total</div>
-      <div class="sc-hint">${isSel?'▲ Ocultar':'▼ Ver detalle'}</div>
+      <div class="sc-footer">
+        <span class="sc-pct">${pct}% del total</span>
+        <span class="sc-hint">${isSel?'▲ Ocultar':'▼ Detalle'}</span>
+      </div>
     </div>`;
   });
   statsEl.innerHTML=sHTML;
