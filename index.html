@@ -622,6 +622,63 @@ select option{background:var(--bg2);color:var(--text);}
 .toast.success{background:rgba(16,185,129,.15);color:var(--em2);border:1px solid rgba(16,185,129,.3);}
 .toast.error{background:rgba(244,63,94,.15);color:#fca5a5;border:1px solid rgba(244,63,94,.3);}
 
+/* ══════════ AUTH SCREEN ══════════ */
+#auth-screen{
+  position:fixed;inset:0;z-index:600;
+  background:var(--bg);
+  display:flex;align-items:center;justify-content:center;
+  padding:24px;
+}
+.auth-orb{position:absolute;border-radius:50%;filter:blur(80px);pointer-events:none;}
+.auth-orb-1{width:500px;height:500px;background:radial-gradient(circle,#7c3aed,transparent 70%);top:-150px;left:-150px;opacity:.2;}
+.auth-orb-2{width:400px;height:400px;background:radial-gradient(circle,#06b6d4,transparent 70%);bottom:-100px;right:-100px;opacity:.15;}
+.auth-wrap{
+  width:100%;max-width:380px;
+  display:flex;flex-direction:column;align-items:center;gap:20px;
+  position:relative;z-index:1;
+}
+.auth-logo{
+  width:72px;height:72px;border-radius:20px;
+  background:var(--grad-h);
+  display:flex;align-items:center;justify-content:center;
+  font-size:36px;
+  box-shadow:0 0 50px rgba(124,58,237,.45);
+  animation:pulse 2.5s ease infinite;
+}
+.auth-title{
+  font-family:'Outfit',sans-serif;font-size:30px;font-weight:800;
+  letter-spacing:-.5px;margin-top:-4px;
+}
+.auth-title em{font-style:normal;background:var(--grad-h);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.auth-sub{font-size:13px;color:var(--text3);text-align:center;margin-top:-10px;}
+.auth-card{
+  width:100%;
+  background:rgba(22,22,42,.9);
+  border:1px solid var(--border2);
+  border-radius:var(--r-xl);
+  padding:24px;
+  display:flex;flex-direction:column;gap:12px;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);
+  backdrop-filter:blur(20px);
+}
+.auth-divider{
+  display:flex;align-items:center;gap:12px;width:100%;
+  color:var(--text3);font-size:12px;
+}
+.auth-divider::before,.auth-divider::after{
+  content:'';flex:1;height:1px;background:var(--border);
+}
+.auth-fp-btn{
+  width:100%;padding:16px;border-radius:var(--r-lg);
+  background:rgba(255,255,255,.04);border:1px solid var(--border2);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:12px;
+  color:var(--text2);font-size:14px;font-weight:600;
+  font-family:'DM Sans',sans-serif;
+  transition:all var(--t);
+}
+.auth-fp-btn:hover{background:rgba(124,58,237,.12);border-color:rgba(124,58,237,.3);color:var(--v3);}
+.auth-fp-icon{font-size:26px;line-height:1;}
+
 /* ══════════ LOADING ══════════ */
 .loading-screen{
   position:fixed;inset:0;z-index:500;
@@ -829,8 +886,50 @@ select option{background:var(--bg2);color:var(--text);}
 <div class="orb orb-2"></div>
 <div class="orb orb-3"></div>
 
+<!-- ══ AUTH SCREEN ══ -->
+<div id="auth-screen" style="display:none;">
+  <div class="auth-orb auth-orb-1"></div>
+  <div class="auth-orb auth-orb-2"></div>
+  <div class="auth-wrap">
+    <div class="auth-logo">💳</div>
+    <div class="auth-title">Tarjet<em>App</em></div>
+    <div class="auth-sub" id="auth-sub">Ingresá tu contraseña para continuar</div>
+
+    <div class="auth-card" id="auth-card-password">
+      <label class="field-label" style="text-align:left;">Contraseña</label>
+      <div style="position:relative;">
+        <input id="auth-input" type="password" placeholder="••••••••"
+          style="padding-right:44px;"
+          onkeydown="if(event.key==='Enter')tryLogin()">
+        <button onclick="toggleAuthVis()" id="auth-vis-btn"
+          style="position:absolute;right:12px;top:50%;transform:translateY(-50%);
+          background:none;border:none;cursor:pointer;color:var(--text3);font-size:18px;line-height:1;">👁</button>
+      </div>
+      <div id="auth-error" style="font-size:12px;color:#f87171;margin-top:8px;min-height:18px;text-align:center;"></div>
+      <button class="btn btn-primary" style="width:100%;margin-top:4px;justify-content:center;" onclick="tryLogin()">
+        Ingresar
+      </button>
+    </div>
+
+    <div id="auth-fp-wrap" style="display:none;margin-top:0;">
+      <div class="auth-divider"><span>o</span></div>
+      <button class="auth-fp-btn" id="auth-fp-btn" onclick="tryFingerprint()">
+        <span class="auth-fp-icon">🔐</span>
+        <span id="auth-fp-label">Usar huella dactilar</span>
+      </button>
+    </div>
+
+    <div id="auth-reg-fp-wrap" style="display:none;margin-top:16px;text-align:center;">
+      <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;" onclick="registerFingerprint()">
+        ＋ Registrar huella dactilar
+      </button>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px;">Solo necesitás hacerlo una vez en este dispositivo</div>
+    </div>
+  </div>
+</div>
+
 <!-- LOADING -->
-<div class="loading-screen" id="loading-screen">
+<div class="loading-screen" id="loading-screen" style="display:none;">
   <div class="loading-logo">💳</div>
   <div class="loading-name">Tarjet<em>App</em></div>
   <div class="loading-bar-wrap"><div class="loading-bar"></div></div>
@@ -1157,6 +1256,17 @@ let currentPage='resumen';
 
 /* ═══════════ INIT ═══════════ */
 async function init(){
+  if(isSessionValid()){
+    await loadAndRender();
+  } else {
+    showAuth();
+  }
+}
+
+async function loadAndRender(){
+  // Asegurar que el loading screen esté visible
+  const ls=document.getElementById('loading-screen');
+  ls.style.display='flex';ls.style.opacity='1';
   try{
     const[t,c,g]=await Promise.all([
       sb.from('tarjetas').select('*').order('created_at'),
@@ -1168,10 +1278,9 @@ async function init(){
     setSync(true);
   }catch{setSync(false);showToast('Error al conectar','error');}
   setTimeout(()=>{
-    const ls=document.getElementById('loading-screen');
     ls.style.transition='opacity .4s';ls.style.opacity='0';
     setTimeout(()=>ls.style.display='none',400);
-  },1400);
+  },1000);
   buildAllPeriods();setCurrentPeriod();renderResumen();
 }
 
@@ -1909,6 +2018,160 @@ function showToast(msg,type='success'){
 }
 
 document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
+
+/* ═══════════ AUTH ═══════════ */
+// ⚠️ Cambiá este hash por el de tu contraseña.
+// Para generarlo: abrí la consola del navegador y ejecutá:
+// crypto.subtle.digest('SHA-256', new TextEncoder().encode('tuContraseña'))
+//   .then(b => console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')))
+// Contraseña actual: tarjetapp2024
+const PASS_HASH = 'e020ef562b56f68f4feeeda665156eeae2917864d51c00a1ef4fb446c6cefafe';
+
+const SESSION_KEY  = 'ta_auth_ts';
+const SESSION_HOURS = 12; // horas antes de pedir contraseña de nuevo
+const FP_CRED_KEY  = 'ta_fp_cred';
+const RP_ID        = location.hostname || 'localhost';
+const RP_NAME      = 'TarjetApp';
+
+async function hashPassword(pwd){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pwd));
+  return [...new Uint8Array(buf)].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+
+function isSessionValid(){
+  const ts = localStorage.getItem(SESSION_KEY);
+  if(!ts) return false;
+  return (Date.now() - parseInt(ts)) < SESSION_HOURS * 3600 * 1000;
+}
+
+function setSession(){ localStorage.setItem(SESSION_KEY, Date.now()); }
+
+function hasFingerprintCred(){
+  return !!localStorage.getItem(FP_CRED_KEY);
+}
+
+function base64ToBuffer(b64){
+  return Uint8Array.from(atob(b64.replace(/-/g,'+').replace(/_/g,'/')), c=>c.charCodeAt(0));
+}
+function bufferToBase64(buf){
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+async function registerFingerprint(){
+  if(!window.PublicKeyCredential){ showToast('WebAuthn no soportado en este dispositivo','error'); return; }
+  const btn=document.getElementById('auth-reg-fp-wrap').querySelector('button');
+  btn.disabled=true; btn.textContent='Registrando…';
+  try{
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const userId    = crypto.getRandomValues(new Uint8Array(16));
+    const cred = await navigator.credentials.create({ publicKey:{
+      challenge,
+      rp:{ id: RP_ID, name: RP_NAME },
+      user:{ id: userId, name:'usuario', displayName:'TarjetApp User' },
+      pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
+      authenticatorSelection:{ authenticatorAttachment:'platform', userVerification:'required' },
+      timeout: 60000,
+    }});
+    localStorage.setItem(FP_CRED_KEY, JSON.stringify({
+      id: bufferToBase64(cred.rawId),
+      type: cred.type,
+    }));
+    showToast('Huella registrada ✓ Ya podés usarla para ingresar');
+    document.getElementById('auth-fp-wrap').style.display='block';
+    document.getElementById('auth-reg-fp-wrap').style.display='none';
+  }catch(e){
+    showToast('No se pudo registrar la huella','error');
+    console.error(e);
+  }
+  btn.disabled=false; btn.textContent='＋ Registrar huella dactilar';
+}
+
+async function tryFingerprint(){
+  if(!window.PublicKeyCredential){ showToast('WebAuthn no soportado','error'); return; }
+  const stored = localStorage.getItem(FP_CRED_KEY);
+  if(!stored){ showToast('No hay huella registrada','error'); return; }
+  const { id } = JSON.parse(stored);
+  const btn = document.getElementById('auth-fp-btn');
+  btn.disabled=true;
+  document.getElementById('auth-fp-label').textContent='Verificando…';
+  try{
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    await navigator.credentials.get({ publicKey:{
+      challenge,
+      rpId: RP_ID,
+      allowCredentials:[{ id: base64ToBuffer(id), type:'public-key' }],
+      userVerification:'required',
+      timeout: 60000,
+    }});
+    setSession();
+    hideAuth();
+  }catch(e){
+    if(e.name !== 'NotAllowedError'){
+      showToast('Error de autenticación','error');
+      console.error(e);
+    }
+  }
+  btn.disabled=false;
+  document.getElementById('auth-fp-label').textContent='Usar huella dactilar';
+}
+
+async function tryLogin(){
+  const val = document.getElementById('auth-input').value;
+  const errEl = document.getElementById('auth-error');
+  errEl.textContent='';
+  if(!val){ errEl.textContent='Ingresá tu contraseña'; return; }
+  const hash = await hashPassword(val);
+  if(hash !== PASS_HASH){
+    errEl.textContent='Contraseña incorrecta';
+    document.getElementById('auth-input').value='';
+    document.getElementById('auth-input').focus();
+    // Shake animation
+    const card = document.getElementById('auth-card-password');
+    card.style.animation='shake .4s ease';
+    setTimeout(()=>card.style.animation='',400);
+    return;
+  }
+  setSession();
+  // Si nunca registró huella, ofrecer registro ahora
+  if(window.PublicKeyCredential && !hasFingerprintCred()){
+    const offer = confirm('¿Querés registrar tu huella dactilar para la próxima vez?');
+    if(offer) await registerFingerprint();
+  }
+  hideAuth();
+}
+
+function toggleAuthVis(){
+  const inp = document.getElementById('auth-input');
+  inp.type = inp.type==='password' ? 'text' : 'password';
+}
+
+function showAuth(){
+  const screen = document.getElementById('auth-screen');
+  screen.style.display='flex';
+  setTimeout(()=>document.getElementById('auth-input').focus(), 100);
+
+  // Mostrar opción de huella si hay credencial registrada
+  if(window.PublicKeyCredential && hasFingerprintCred()){
+    document.getElementById('auth-fp-wrap').style.display='block';
+    document.getElementById('auth-reg-fp-wrap').style.display='none';
+  } else if(window.PublicKeyCredential){
+    document.getElementById('auth-fp-wrap').style.display='none';
+    document.getElementById('auth-reg-fp-wrap').style.display='block';
+  }
+}
+
+function hideAuth(){
+  const screen = document.getElementById('auth-screen');
+  screen.style.transition='opacity .3s';
+  screen.style.opacity='0';
+  setTimeout(()=>{ screen.style.display='none'; screen.style.opacity='1'; loadAndRender(); }, 300);
+}
+
+// Shake keyframe (añadir al CSS dinámicamente)
+const shakeStyle=document.createElement('style');
+shakeStyle.textContent=`@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}`;
+document.head.appendChild(shakeStyle);
 
 init();
 </script>
