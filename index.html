@@ -2024,18 +2024,36 @@ document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click
 // crypto.subtle.digest('SHA-256', new TextEncoder().encode('tuContraseña'))
 //   .then(b => console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')))
 const PASS_HASH   = '680e45a444ca4dcc0a0275779d08074f17c4a2114c46ee1dc3e42d0f8b6cdd03';
-const FP_CRED_KEY = 'ta_fp_cred';
+const FP_CRED_KEY = 'ta_fp_cred_v2'; // v2 para limpiar credenciales viejas
 const RP_ID       = location.hostname || 'localhost';
 const RP_NAME     = 'TarjetApp';
-// ─────────────────────────────────────────────────────────────────────
+
+function hasFingerprintCred(){
+  return !!(localStorage.getItem(FP_CRED_KEY) || sessionStorage.getItem(FP_CRED_KEY));
+}
+
+function saveFpCred(data){
+  const json = JSON.stringify(data);
+  try{ localStorage.setItem(FP_CRED_KEY, json); }catch(e){}
+  try{ sessionStorage.setItem(FP_CRED_KEY, json); }catch(e){}
+}
+
+function getFpCred(){
+  const raw = localStorage.getItem(FP_CRED_KEY) || sessionStorage.getItem(FP_CRED_KEY);
+  if(!raw) return null;
+  try{ return JSON.parse(raw); }catch(e){ return null; }
+}
+
+function clearFpCred(){
+  localStorage.removeItem(FP_CRED_KEY);
+  sessionStorage.removeItem(FP_CRED_KEY);
+  // Limpiar clave vieja por si quedó
+  localStorage.removeItem('ta_fp_cred');
+}
 
 async function hashPassword(pwd){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pwd));
   return [...new Uint8Array(buf)].map(x=>x.toString(16).padStart(2,'0')).join('');
-}
-
-function hasFingerprintCred(){
-  return !!localStorage.getItem(FP_CRED_KEY);
 }
 
 function base64ToBuffer(b64){
@@ -2060,10 +2078,7 @@ async function registerFingerprint(){
       authenticatorSelection:{ authenticatorAttachment:'platform', userVerification:'required' },
       timeout: 60000,
     }});
-    localStorage.setItem(FP_CRED_KEY, JSON.stringify({
-      id: bufferToBase64(cred.rawId),
-      type: cred.type,
-    }));
+    saveFpCred({ id: bufferToBase64(cred.rawId), type: cred.type });
     return true;
   }catch(e){
     console.error('Registro huella:', e);
@@ -2073,9 +2088,9 @@ async function registerFingerprint(){
 
 // ── Autenticar con huella ─────────────────────────────────────────────
 async function tryFingerprint(){
-  const stored = localStorage.getItem(FP_CRED_KEY);
+  const stored = getFpCred();
   if(!stored){ showToast('No hay huella registrada','error'); return; }
-  const { id } = JSON.parse(stored);
+  const { id } = stored;
   const btn = document.getElementById('auth-fp-btn');
   const lbl = document.getElementById('auth-fp-label');
   btn.disabled=true; lbl.textContent='Verificando…';
@@ -2093,7 +2108,7 @@ async function tryFingerprint(){
     if(e.name==='NotAllowedError'){
       // usuario canceló — sin mensaje
     }else if(e.name==='InvalidStateError'||e.name==='NotFoundError'){
-      localStorage.removeItem(FP_CRED_KEY);
+      clearFpCred();
       showToast('Huella no encontrada en este dispositivo, usá la contraseña','error');
       updateAuthUI();
     }else{
@@ -2204,7 +2219,14 @@ function showAuth(){
   const screen=document.getElementById('auth-screen');
   screen.style.display='flex';
   updateAuthUI();
-  setTimeout(()=>document.getElementById('auth-input').focus(),150);
+
+  // Si hay huella registrada, intentarla automáticamente
+  if(window.PublicKeyCredential && hasFingerprintCred()){
+    // Pequeño delay para que la pantalla se muestre primero
+    setTimeout(()=>tryFingerprint(), 400);
+  } else {
+    setTimeout(()=>document.getElementById('auth-input').focus(), 150);
+  }
 }
 
 // Shake keyframe
