@@ -1256,11 +1256,8 @@ let currentPage='resumen';
 
 /* ═══════════ INIT ═══════════ */
 async function init(){
-  if(isSessionValid()){
-    await loadAndRender();
-  } else {
-    showAuth();
-  }
+  // Siempre pedir autenticación al abrir la app
+  showAuth();
 }
 
 async function loadAndRender(){
