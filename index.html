@@ -368,8 +368,9 @@ body::before{
 
 /* Anchos fijos de columnas en la tabla de gastos */
 .col-desc   { width:auto; min-width:90px; }
-.col-cat    { width:130px; }
-.col-tarjeta{ width:90px; }
+.col-cat    { width:100px; }
+.col-banco  { width:110px; }
+.col-marca  { width:120px; }
 .col-fecha  { width:100px; white-space:nowrap; }
 .col-monto  { width:110px; text-align:right; white-space:nowrap; }
 .col-cuotas { width:90px; }
@@ -378,14 +379,18 @@ body::before{
 /* Mobile: tabla con menos padding y columnas adaptadas */
 @media(max-width:640px){
   .data-table th, .data-table td{ padding:10px 10px; }
-  .col-cat  { width:110px; }
+  .col-cat  { width:80px; }
+  .col-banco{ width:90px; }
+  .col-marca{ width:100px; }
   .col-monto{ width:90px; font-size:12px; }
   .col-acc  { width:60px; }
 }
 @media(max-width:480px){
   .data-table th, .data-table td{ padding:9px 8px; font-size:12px; }
   .col-monto{ width:80px; font-size:11px; }
-  .col-cat  { width:90px; }
+  .col-cat  { width:70px; }
+  .col-banco{ width:80px; }
+  .col-marca{ width:88px; }
 }
 
 .pill{display:inline-flex;align-items:center;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.3px;}
@@ -543,6 +548,32 @@ select option{background:var(--bg2);color:var(--text);}
 .filter-tab{padding:7px 14px;border-radius:var(--r-xs);cursor:pointer;font-size:12px;font-weight:600;color:var(--text3);transition:all var(--t);border:none;background:none;font-family:'DM Sans',sans-serif;white-space:nowrap;}
 .filter-tab.active{background:rgba(124,58,237,.2);color:var(--v3);box-shadow:inset 0 1px 0 rgba(255,255,255,.1);}
 .filter-tab:hover:not(.active){color:var(--text2);}
+
+/* ══════════ PAGINACIÓN ══════════ */
+.paginacion{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 4px 4px;gap:12px;flex-wrap:wrap;
+}
+.pag-info{font-size:12px;color:var(--text3);font-weight:500;white-space:nowrap;}
+.pag-btns{display:flex;gap:4px;align-items:center;flex-wrap:wrap;}
+.pag-btn{
+  min-width:34px;height:34px;padding:0 8px;
+  border-radius:var(--r-xs);border:1px solid var(--border2);
+  background:var(--surface);color:var(--text2);
+  font-size:13px;font-weight:600;cursor:pointer;
+  font-family:'DM Sans',sans-serif;
+  transition:all var(--t);display:flex;align-items:center;justify-content:center;
+}
+.pag-btn:hover:not(:disabled){background:rgba(124,58,237,.15);color:var(--v3);border-color:rgba(124,58,237,.3);}
+.pag-btn.active{background:rgba(124,58,237,.25);color:var(--v3);border-color:rgba(124,58,237,.4);font-weight:700;}
+.pag-btn.disabled,.pag-btn:disabled{opacity:.3;cursor:not-allowed;}
+.pag-ellipsis{min-width:34px;height:34px;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px;}
+
+@media(max-width:480px){
+  .paginacion{justify-content:center;}
+  .pag-info{width:100%;text-align:center;}
+  .pag-btn{min-width:30px;height:30px;font-size:12px;}
+}
 
 /* ══════════ GASTOS TOOLBAR ══════════ */
 .gastos-toolbar{display:flex;flex-direction:column;gap:10px;margin-bottom:20px;}
@@ -891,8 +922,20 @@ select option{background:var(--bg2);color:var(--text);}
               <button class="filter-tab" onclick="filterGastos('pasados',this)">Pasados</button>
             </div>
           </div>
-          <!-- Fila 2: agrupación + mes -->
+          <!-- Fila 2: filtros banco + marca + agrupar -->
           <div class="gt-row gt-row-controls">
+            <div class="gt-control-group">
+              <span class="gt-label">Banco</span>
+              <select id="banco-filter" class="gt-select" onchange="renderGastos()">
+                <option value="">Todos</option>
+              </select>
+            </div>
+            <div class="gt-control-group">
+              <span class="gt-label">Marca</span>
+              <select id="marca-filter" class="gt-select" onchange="renderGastos()">
+                <option value="">Todas</option>
+              </select>
+            </div>
             <div class="gt-control-group">
               <span class="gt-label">Agrupar</span>
               <div class="filter-tabs">
@@ -900,9 +943,18 @@ select option{background:var(--bg2);color:var(--text);}
                 <button class="filter-tab" id="group-tab-month" onclick="setGrouping('month',this)">Por mes</button>
               </div>
             </div>
+          </div>
+          <!-- Fila 3: mes + año -->
+          <div class="gt-row gt-row-controls">
             <div class="gt-control-group">
               <span class="gt-label">Mes</span>
               <select id="mes-filter" class="gt-select" onchange="renderGastos()">
+                <option value="">Todos</option>
+              </select>
+            </div>
+            <div class="gt-control-group">
+              <span class="gt-label">Año</span>
+              <select id="anio-filter" class="gt-select" onchange="renderGastos()">
                 <option value="">Todos</option>
               </select>
             </div>
@@ -915,8 +967,8 @@ select option{background:var(--bg2);color:var(--text);}
                 <thead><tr>
                   <th class="col-desc">Descripción</th>
                   <th class="col-cat">Categoría</th>
-                  <th class="col-tarjeta">Banco</th>
-                  <th class="col-tarjeta">Marca</th>
+                  <th class="col-banco col-tarjeta">Banco</th>
+                  <th class="col-marca col-tarjeta">Marca</th>
                   <th class="col-fecha">Fecha</th>
                   <th class="col-monto">Monto</th>
                   <th class="col-cuotas">Cuotas</th>
@@ -1367,50 +1419,135 @@ function selectCard(tid){
 
 /* ═══════════ GASTOS ═══════════ */
 let gastoGrouping='none';
+let gastoPagina=1;
+const GASTOS_POR_PAG=20;
 
-function buildMesFilter(){
-  const sel=document.getElementById('mes-filter');
-  if(!sel)return;
-  const mks=new Set();
-  gastos.forEach(g=>{if(g.fecha)mks.add(g.fecha.slice(0,7));});
-  const sorted=[...mks].sort().reverse();
-  const cur=sel.value;
-  sel.innerHTML='<option value="">Todos los meses</option>'+sorted.map(mk=>{
-    const[y,m]=mk.split('-').map(Number);
-    const label=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][m-1]+' '+y;
-    return`<option value="${mk}"${mk===cur?' selected':''}>${label}</option>`;
-  }).join('');
+function buildFiltrosGastos(){
+  // Banco
+  const selBanco=document.getElementById('banco-filter');
+  const selMarca=document.getElementById('marca-filter');
+  const selMes=document.getElementById('mes-filter');
+  const selAnio=document.getElementById('anio-filter');
+  if(!selBanco||!selMarca||!selMes||!selAnio)return;
+
+  const curBanco=selBanco.value, curMarca=selMarca.value;
+  const curMes=selMes.value, curAnio=selAnio.value;
+
+  const bancos=new Set(), marcas=new Set(), meses=new Set(), anios=new Set();
+  gastos.forEach(g=>{
+    const t=tarjetas.find(t=>t.id===g.tarjeta_id);
+    if(t){bancos.add(t.banco);marcas.add(t.nombre);}
+    if(g.fecha){
+      const[y,m]=g.fecha.slice(0,7).split('-').map(Number);
+      meses.add(String(m).padStart(2,'0'));
+      anios.add(String(y));
+    }
+  });
+
+  selBanco.innerHTML='<option value="">Todos los bancos</option>'+
+    [...bancos].sort().map(b=>`<option value="${b}"${b===curBanco?' selected':''}>${b}</option>`).join('');
+
+  selMarca.innerHTML='<option value="">Todas las marcas</option>'+
+    [...marcas].sort().map(m=>`<option value="${m}"${m===curMarca?' selected':''}>${m}</option>`).join('');
+
+  const MESES_LABEL=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  selMes.innerHTML='<option value="">Todos</option>'+
+    [...meses].sort().map(m=>`<option value="${m}"${m===curMes?' selected':''}>${MESES_LABEL[parseInt(m)-1]}</option>`).join('');
+
+  selAnio.innerHTML='<option value="">Todos</option>'+
+    [...anios].sort().reverse().map(y=>`<option value="${y}"${y===curAnio?' selected':''}>${y}</option>`).join('');
 }
 
 function setGrouping(mode,el){
   gastoGrouping=mode;
+  gastoPagina=1;
   document.querySelectorAll('#group-tab-none,#group-tab-month').forEach(b=>b.classList.remove('active'));
   el.classList.add('active');
   renderGastos();
 }
 
+function irPagina(p){
+  gastoPagina=p;
+  renderGastos();
+  document.getElementById('gastos-container').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function renderPaginacion(total, paginaActual, container){
+  const totalPags=Math.ceil(total/GASTOS_POR_PAG);
+  if(totalPags<=1)return'';
+  const desde=(paginaActual-1)*GASTOS_POR_PAG+1;
+  const hasta=Math.min(paginaActual*GASTOS_POR_PAG,total);
+
+  let btns='';
+  // Prev
+  btns+=`<button class="pag-btn${paginaActual===1?' disabled':''}" onclick="irPagina(${paginaActual-1})" ${paginaActual===1?'disabled':''}>‹</button>`;
+
+  // Page numbers - smart window
+  let pages=[];
+  if(totalPags<=7){
+    for(let i=1;i<=totalPags;i++)pages.push(i);
+  }else{
+    pages=[1];
+    let lo=Math.max(2,paginaActual-2), hi=Math.min(totalPags-1,paginaActual+2);
+    if(lo>2)pages.push('…');
+    for(let i=lo;i<=hi;i++)pages.push(i);
+    if(hi<totalPags-1)pages.push('…');
+    pages.push(totalPags);
+  }
+
+  pages.forEach(p=>{
+    if(p==='…') btns+=`<span class="pag-ellipsis">…</span>`;
+    else btns+=`<button class="pag-btn${p===paginaActual?' active':''}" onclick="irPagina(${p})">${p}</button>`;
+  });
+
+  // Next
+  btns+=`<button class="pag-btn${paginaActual===totalPags?' disabled':''}" onclick="irPagina(${paginaActual+1})" ${paginaActual===totalPags?'disabled':''}>›</button>`;
+
+  return`<div class="paginacion">
+    <span class="pag-info">${desde}–${hasta} de ${total}</span>
+    <div class="pag-btns">${btns}</div>
+  </div>`;
+}
+
 function renderGastos(){
-  buildMesFilter();
+  buildFiltrosGastos();
   const container=document.getElementById('gastos-container');
   const now=new Date();
-  const mesFiltro=document.getElementById('mes-filter')?document.getElementById('mes-filter').value:'';
 
-  // Ordenar por fecha desc, luego por created_at desc
+  const bancofiltro=(document.getElementById('banco-filter')||{}).value||'';
+  const marcafiltro=(document.getElementById('marca-filter')||{}).value||'';
+  const mesfiltro=(document.getElementById('mes-filter')||{}).value||'';
+  const aniofiltro=(document.getElementById('anio-filter')||{}).value||'';
+
+  // Ordenar por fecha desc
   let lista=[...gastos].sort((a,b)=>{
     const df=new Date(b.fecha+'T12:00:00')-new Date(a.fecha+'T12:00:00');
     if(df!==0)return df;
     return new Date(b.created_at||0)-new Date(a.created_at||0);
   });
 
-  // Filtros de estado
+  // Filtro estado
   if(gastoFilter==='pendientes')lista=lista.filter(g=>{const mks=Object.keys(getCuotasPorPeriodo(g)).sort();if(!mks.length)return true;const[y,m]=mks[mks.length-1].split('-').map(Number);return new Date(y,m-1,28)>=now;});
   else if(gastoFilter==='pasados')lista=lista.filter(g=>{const mks=Object.keys(getCuotasPorPeriodo(g)).sort();if(!mks.length)return false;const[y,m]=mks[mks.length-1].split('-').map(Number);return new Date(y,m-1,28)<now;});
 
-  // Filtro por mes
-  if(mesFiltro)lista=lista.filter(g=>g.fecha&&g.fecha.startsWith(mesFiltro));
+  // Filtro banco / marca
+  if(bancofiltro||marcafiltro){
+    lista=lista.filter(g=>{
+      const t=tarjetas.find(t=>t.id===g.tarjeta_id);
+      if(!t)return false;
+      if(bancofiltro&&t.banco!==bancofiltro)return false;
+      if(marcafiltro&&t.nombre!==marcafiltro)return false;
+      return true;
+    });
+  }
+
+  // Filtro mes / año
+  if(mesfiltro)lista=lista.filter(g=>g.fecha&&g.fecha.slice(5,7)===mesfiltro);
+  if(aniofiltro)lista=lista.filter(g=>g.fecha&&g.fecha.slice(0,4)===aniofiltro);
 
   if(!lista.length){
-    container.innerHTML=`<div class="detail-glass"><div id="gastos-empty" class="empty-state"><div class="empty-icon">🛍️</div><div class="empty-title">Sin gastos</div><div class="empty-sub">No hay gastos que coincidan con los filtros seleccionados</div></div></div>`;
+    gastoPagina=1;
+    container.innerHTML=`<div class="detail-glass"><div class="empty-state"><div class="empty-icon">🛍️</div><div class="empty-title">Sin gastos</div><div class="empty-sub">No hay gastos con los filtros seleccionados</div></div></div>`;
     return;
   }
 
@@ -1424,8 +1561,8 @@ function renderGastos(){
         ${g.nota?`<div style="font-size:11px;color:var(--text3);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${g.nota}</div>`:''}
       </td>
       <td class="col-cat">${cat?`<span class="pill pill-gray" style="font-size:10px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;">${cat}</span>`:'<span style="color:var(--text3);font-size:12px;">—</span>'}</td>
-      <td class="col-tarjeta">${t?`<span class="pill" style="background:${t.color}22;color:${t.color};border:1px solid ${t.color}44;font-size:11px;">${t.banco}</span>`:'—'}</td>
-      <td class="col-tarjeta"><span style="font-weight:700;font-size:13px;color:var(--text2);">${t?t.nombre:'—'}</span></td>
+      <td class="col-banco col-tarjeta">${t?`<span class="pill" style="background:${t.color}22;color:${t.color};border:1px solid ${t.color}44;font-size:11px;">${t.banco}</span>`:'—'}</td>
+      <td class="col-marca col-tarjeta"><span style="font-weight:700;font-size:13px;color:var(--text2);">${t?t.nombre:'—'}</span></td>
       <td class="col-fecha" style="color:var(--text3);white-space:nowrap;">${fDate(new Date(g.fecha+'T12:00:00'))}</td>
       <td class="col-monto" style="font-family:'DM Mono',monospace;font-weight:500;font-size:13px;">$${fmt(g.monto)}</td>
       <td class="col-cuotas"><span class="pill pill-gray" style="font-size:10px;white-space:nowrap;">${g.cuotas>1?`${g.cuotas}× $${fmt(g.monto/g.cuotas)}`:'1 pago'}</span></td>
@@ -1439,18 +1576,18 @@ function renderGastos(){
   };
 
   const theadHTML=`<thead><tr>
-    <th>Descripción</th>
-    <th>Categoría</th>
-    <th class="col-tarjeta">Banco</th>
-    <th class="col-tarjeta">Marca</th>
+    <th class="col-desc">Descripción</th>
+    <th class="col-cat">Categoría</th>
+    <th class="col-banco col-tarjeta">Banco</th>
+    <th class="col-marca col-tarjeta">Marca</th>
     <th class="col-fecha">Fecha</th>
-    <th style="text-align:right;">Monto</th>
+    <th class="col-monto">Monto</th>
     <th class="col-cuotas">Cuotas</th>
-    <th style="width:72px;"></th>
+    <th class="col-acc"></th>
   </tr></thead>`;
 
   if(gastoGrouping==='month'){
-    // Agrupar por mes
+    // En modo agrupado: paginación no aplica, se muestran todos agrupados
     const grupos={};
     lista.forEach(g=>{
       const mk=g.fecha?g.fecha.slice(0,7):'sin-fecha';
@@ -1464,7 +1601,6 @@ function renderGastos(){
       const[y,m]=mk.split('-').map(Number);
       const label=isNaN(m)?'Sin fecha':MESES[m-1]+' '+y;
       const totalMes=items.reduce((s,g)=>s+g.monto,0);
-      const collapsed=false; // start expanded
       return`<div class="mes-grupo" id="grp-${mk}">
         <div class="mes-grupo-head" onclick="toggleGrupo('${mk}')">
           <div style="display:flex;align-items:center;gap:10px;">
@@ -1484,9 +1620,16 @@ function renderGastos(){
       </div>`;
     }).join('');
   } else {
+    // Paginación
+    const totalItems=lista.length;
+    const totalPags=Math.ceil(totalItems/GASTOS_POR_PAG);
+    if(gastoPagina>totalPags)gastoPagina=1;
+    const slice=lista.slice((gastoPagina-1)*GASTOS_POR_PAG, gastoPagina*GASTOS_POR_PAG);
+    const paginaHTML=renderPaginacion(totalItems,gastoPagina,container);
     container.innerHTML=`<div class="detail-glass"><div style="overflow-x:auto;">
-      <table class="data-table">${theadHTML}<tbody>${lista.map(rowHTML).join('')}</tbody></table>
-    </div></div>`;
+      <table class="data-table">${theadHTML}<tbody>${slice.map(rowHTML).join('')}</tbody></table>
+    </div></div>
+    ${paginaHTML}`;
   }
 }
 
@@ -1501,6 +1644,7 @@ function toggleGrupo(mk){
 
 function filterGastos(f,el){
   gastoFilter=f;
+  gastoPagina=1;
   document.querySelectorAll('.filter-tab:not(#group-tab-none):not(#group-tab-month)').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   renderGastos();
@@ -1512,7 +1656,7 @@ function openModalGasto(){
   document.getElementById('mg-eyebrow').textContent='Nuevo gasto';
   document.getElementById('mg-title').textContent='Registrar compra';
   document.getElementById('btn-save-gasto').textContent='Registrar';
-  document.getElementById('g-tarjeta').innerHTML=tarjetas.map(t=>`<option value="${t.id}">${t.banco} – ${t.nombre}</option>`).join('');
+  document.getElementById('g-tarjeta').innerHTML='<option value="" disabled selected>— Seleccioná una tarjeta —</option>'+tarjetas.map(t=>`<option value="${t.id}">${t.banco} – ${t.nombre}</option>`).join('');
   document.getElementById('g-fecha').value=new Date().toISOString().split('T')[0];
   ['g-monto','g-desc','g-nota'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('g-cuotas').value=1;
