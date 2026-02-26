@@ -919,12 +919,7 @@ select option{background:var(--bg2);color:var(--text);}
       </button>
     </div>
 
-    <div id="auth-reg-fp-wrap" style="display:none;margin-top:16px;text-align:center;">
-      <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;" onclick="registerFingerprintFromLogin()">
-        ＋ Registrar huella dactilar
-      </button>
-      <div style="font-size:11px;color:var(--text3);margin-top:8px;">Solo necesitás hacerlo una vez en este dispositivo</div>
-    </div>
+    <div id="auth-reg-fp-wrap" style="display:none;"></div>
   </div>
 </div>
 
@@ -2023,100 +2018,63 @@ document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click
 // Para cambiar la contraseña, generá el hash en la consola del navegador:
 // crypto.subtle.digest('SHA-256', new TextEncoder().encode('tuContraseña'))
 //   .then(b => console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')))
-const PASS_HASH   = '680e45a444ca4dcc0a0275779d08074f17c4a2114c46ee1dc3e42d0f8b6cdd03';
-const FP_CRED_KEY = 'ta_fp_cred_v2'; // v2 para limpiar credenciales viejas
-const RP_ID       = location.hostname || 'localhost';
-const RP_NAME     = 'TarjetApp';
-
-function hasFingerprintCred(){
-  return !!(localStorage.getItem(FP_CRED_KEY) || sessionStorage.getItem(FP_CRED_KEY));
-}
-
-function saveFpCred(data){
-  const json = JSON.stringify(data);
-  try{ localStorage.setItem(FP_CRED_KEY, json); }catch(e){}
-  try{ sessionStorage.setItem(FP_CRED_KEY, json); }catch(e){}
-}
-
-function getFpCred(){
-  const raw = localStorage.getItem(FP_CRED_KEY) || sessionStorage.getItem(FP_CRED_KEY);
-  if(!raw) return null;
-  try{ return JSON.parse(raw); }catch(e){ return null; }
-}
-
-function clearFpCred(){
-  localStorage.removeItem(FP_CRED_KEY);
-  sessionStorage.removeItem(FP_CRED_KEY);
-  // Limpiar clave vieja por si quedó
-  localStorage.removeItem('ta_fp_cred');
-}
+const PASS_HASH    = '680e45a444ca4dcc0a0275779d08074f17c4a2114c46ee1dc3e42d0f8b6cdd03';
+const AUTH_TOKEN_KEY = 'ta_auth_token'; // token que indica que el dispositivo ya fue verificado
+// ─────────────────────────────────────────────────────────────────────
 
 async function hashPassword(pwd){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pwd));
   return [...new Uint8Array(buf)].map(x=>x.toString(16).padStart(2,'0')).join('');
 }
 
-function base64ToBuffer(b64){
-  return Uint8Array.from(atob(b64.replace(/-/g,'+').replace(/_/g,'/')), c=>c.charCodeAt(0));
+// Guardar/leer token de dispositivo verificado
+function saveAuthToken(){
+  const token = 'verified_' + Date.now();
+  try{ localStorage.setItem(AUTH_TOKEN_KEY, token); }catch(e){}
+  try{ sessionStorage.setItem(AUTH_TOKEN_KEY, token); }catch(e){}
 }
-function bufferToBase64(buf){
-  return btoa(String.fromCharCode(...new Uint8Array(buf)))
-    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+function hasAuthToken(){
+  return !!(localStorage.getItem(AUTH_TOKEN_KEY) || sessionStorage.getItem(AUTH_TOKEN_KEY));
 }
-
-// ── Registrar huella ──────────────────────────────────────────────────
-async function registerFingerprint(){
-  if(!window.PublicKeyCredential) return false;
-  try{
-    const challenge = crypto.getRandomValues(new Uint8Array(32));
-    const userId    = crypto.getRandomValues(new Uint8Array(16));
-    const cred = await navigator.credentials.create({ publicKey:{
-      challenge,
-      rp:{ id: RP_ID, name: RP_NAME },
-      user:{ id: userId, name:'usuario', displayName:'TarjetApp User' },
-      pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
-      authenticatorSelection:{ authenticatorAttachment:'platform', userVerification:'required' },
-      timeout: 60000,
-    }});
-    saveFpCred({ id: bufferToBase64(cred.rawId), type: cred.type });
-    return true;
-  }catch(e){
-    console.error('Registro huella:', e);
-    return false;
-  }
+function clearAuthToken(){
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  sessionStorage.removeItem(AUTH_TOKEN_KEY);
 }
 
-// ── Autenticar con huella ─────────────────────────────────────────────
-async function tryFingerprint(){
-  const stored = getFpCred();
-  if(!stored){ showToast('No hay huella registrada','error'); return; }
-  const { id } = stored;
-  const btn = document.getElementById('auth-fp-btn');
-  const lbl = document.getElementById('auth-fp-label');
-  btn.disabled=true; lbl.textContent='Verificando…';
-  try{
-    const challenge = crypto.getRandomValues(new Uint8Array(32));
-    await navigator.credentials.get({ publicKey:{
-      challenge,
-      rpId: RP_ID,
-      allowCredentials:[{ id: base64ToBuffer(id), type:'public-key' }],
-      userVerification:'required',
-      timeout: 60000,
-    }});
-    enterApp();
-  }catch(e){
-    if(e.name==='NotAllowedError'){
-      // usuario canceló — sin mensaje
-    }else if(e.name==='InvalidStateError'||e.name==='NotFoundError'){
-      clearFpCred();
-      showToast('Huella no encontrada en este dispositivo, usá la contraseña','error');
-      updateAuthUI();
-    }else{
-      showToast('Error al verificar huella','error');
-      console.error(e);
+// ── Verificar huella con API nativa del dispositivo ───────────────────
+// Usa UserVerifyingPlatformAuthenticator — disponible en Android/iOS
+// sin necesidad de registrar credencial WebAuthn
+async function verifyWithBiometric(){
+  // Método 1: verificación de plataforma directa (Chrome Android 108+)
+  if(window.PublicKeyCredential &&
+     typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function'){
+    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    if(available){
+      try{
+        // Crear credencial temporal solo para verificar biometría
+        const challenge = crypto.getRandomValues(new Uint8Array(32));
+        const userId    = new TextEncoder().encode('tarjetapp-user');
+        await navigator.credentials.create({ publicKey:{
+          challenge,
+          rp:{ name:'TarjetApp' }, // sin rpId — usa el dominio actual automáticamente
+          user:{ id:userId, name:'usuario', displayName:'Usuario' },
+          pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
+          authenticatorSelection:{
+            authenticatorAttachment:'platform',
+            userVerification:'required',
+            residentKey:'discouraged',
+          },
+          timeout:60000,
+        }});
+        return true; // biometría verificada
+      }catch(e){
+        if(e.name==='NotAllowedError') return null; // usuario canceló
+        console.warn('biometric verify error:', e.name, e.message);
+        return false;
+      }
     }
   }
-  btn.disabled=false; lbl.textContent='Usar huella dactilar';
+  return false; // no disponible
 }
 
 // ── Login con contraseña ──────────────────────────────────────────────
@@ -2135,16 +2093,26 @@ async function tryLogin(){
     setTimeout(()=>card.style.animation='',400);
     return;
   }
-  // Contraseña correcta
-  if(hasFingerprintCred()||!window.PublicKeyCredential){
-    enterApp(); // ya tiene huella o no hay soporte → entrar directo
-  }else{
-    showFpOfferUI(); // primera vez → ofrecer registrar huella
+  // Contraseña correcta — guardar token y verificar si tiene biometría
+  saveAuthToken();
+  if(!hasShownBiometricOffer){
+    const biometricAvailable = window.PublicKeyCredential &&
+      typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable==='function'
+      ? await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+      : false;
+    if(biometricAvailable){
+      showFpOfferUI();
+      return;
+    }
   }
+  enterApp();
 }
 
-// ── Ofrecer registro de huella con UI propia ──────────────────────────
+let hasShownBiometricOffer = false;
+
+// ── Ofrecer biometría con UI propia ──────────────────────────────────
 function showFpOfferUI(){
+  hasShownBiometricOffer = true;
   document.getElementById('auth-card-password').style.display='none';
   document.getElementById('auth-fp-wrap').style.display='none';
   document.getElementById('auth-reg-fp-wrap').style.display='none';
@@ -2155,33 +2123,78 @@ function showFpOfferUI(){
     offerDiv.className='auth-card';
     offerDiv.style.cssText='display:flex;flex-direction:column;gap:12px;';
     offerDiv.innerHTML=`
-      <div style="text-align:center;font-size:44px;">🔐</div>
-      <div style="font-family:'Outfit',sans-serif;font-size:16px;font-weight:700;text-align:center;">Registrar huella dactilar</div>
-      <div style="font-size:13px;color:var(--text3);text-align:center;">La próxima vez entrás con un toque, sin contraseña</div>
-      <button class="btn btn-primary" id="fp-offer-yes" style="width:100%;justify-content:center;">🔐 Registrar huella ahora</button>
-      <button class="btn btn-ghost" id="fp-offer-no" style="width:100%;justify-content:center;">Omitir por ahora</button>
+      <div style="text-align:center;font-size:44px;margin-bottom:4px;">🔐</div>
+      <div style="font-family:'Outfit',sans-serif;font-size:16px;font-weight:700;text-align:center;">¿Usar huella o Face ID?</div>
+      <div style="font-size:13px;color:var(--text3);text-align:center;line-height:1.6;">
+        La próxima vez que abras la app te pedirá la huella directamente, sin contraseña.
+      </div>
+      <button class="btn btn-primary" id="fp-offer-yes" style="width:100%;justify-content:center;">🔐 Sí, usar huella</button>
+      <button class="btn btn-ghost" id="fp-offer-no" style="width:100%;justify-content:center;">No por ahora</button>
     `;
     document.querySelector('.auth-wrap').appendChild(offerDiv);
   }
   offerDiv.style.display='flex';
-  document.getElementById('fp-offer-no').onclick=()=>enterApp();
+  document.getElementById('fp-offer-no').onclick=()=>{
+    // Guardar preferencia de no usar biometría
+    localStorage.setItem('ta_no_biometric','1');
+    enterApp();
+  };
   document.getElementById('fp-offer-yes').onclick=async()=>{
-    const btn=document.getElementById('fp-offer-yes');
-    btn.disabled=true; btn.textContent='Activá tu huella o Face ID…';
-    const ok=await registerFingerprint();
-    showToast(ok?'¡Huella registrada! La próxima vez entrás directo':'No se pudo registrar. Podés intentarlo luego',ok?'success':'error');
+    // Guardar preferencia de usar biometría
+    localStorage.setItem('ta_use_biometric','1');
+    localStorage.removeItem('ta_no_biometric');
     enterApp();
   };
 }
 
-// ── Registrar huella desde botón en pantalla de login ─────────────────
-async function registerFingerprintFromLogin(){
-  const btn=document.getElementById('auth-reg-fp-wrap').querySelector('button');
-  btn.disabled=true; btn.textContent='Activá tu huella o Face ID…';
-  const ok=await registerFingerprint();
-  showToast(ok?'¡Huella registrada!':'No se pudo registrar la huella',ok?'success':'error');
+// ── Autenticar con huella al abrir la app ─────────────────────────────
+async function tryFingerprint(){
+  const btn = document.getElementById('auth-fp-btn');
+  const lbl = document.getElementById('auth-fp-label');
+  if(btn) btn.disabled=true;
+  if(lbl) lbl.textContent='Verificando…';
+
+  const result = await verifyWithBiometric();
+
+  if(result===true){
+    saveAuthToken();
+    enterApp();
+  }else if(result===null){
+    // usuario canceló — no hacer nada, deja la pantalla visible
+  }else{
+    // falló o no disponible — mostrar contraseña
+    showToast('Usá la contraseña para ingresar','error');
+  }
+  if(btn) btn.disabled=false;
+  if(lbl) lbl.textContent='Usar huella dactilar';
+}
+
+function toggleAuthVis(){
+  const inp=document.getElementById('auth-input');
+  inp.type=inp.type==='password'?'text':'password';
+}
+
+function updateAuthUI(){
+  const useBiometric = localStorage.getItem('ta_use_biometric')==='1'
+                    && localStorage.getItem('ta_no_biometric')!=='1';
+  document.getElementById('auth-fp-wrap').style.display     = useBiometric?'block':'none';
+  document.getElementById('auth-reg-fp-wrap').style.display = 'none'; // ya no se necesita
+}
+
+// ── Mostrar pantalla de auth ──────────────────────────────────────────
+function showAuth(){
+  const screen=document.getElementById('auth-screen');
+  screen.style.display='flex';
   updateAuthUI();
-  btn.disabled=false; btn.textContent='＋ Registrar huella dactilar';
+
+  // Si el usuario activó biometría, dispararla automáticamente
+  const useBiometric = localStorage.getItem('ta_use_biometric')==='1'
+                    && localStorage.getItem('ta_no_biometric')!=='1';
+  if(useBiometric){
+    setTimeout(()=>tryFingerprint(), 400);
+  }else{
+    setTimeout(()=>{ const i=document.getElementById('auth-input'); if(i)i.focus(); },150);
+  }
 }
 
 // ── Entrar a la app ───────────────────────────────────────────────────
@@ -2192,7 +2205,6 @@ function enterApp(){
   setTimeout(()=>{
     screen.style.display='none';
     screen.style.opacity='1';
-    // Resetear UI para la próxima apertura
     document.getElementById('auth-card-password').style.display='flex';
     document.getElementById('auth-input').value='';
     document.getElementById('auth-error').textContent='';
@@ -2200,33 +2212,6 @@ function enterApp(){
     if(offer)offer.style.display='none';
     loadAndRender();
   },350);
-}
-
-// ── Actualizar visibilidad de botones de huella ───────────────────────
-function updateAuthUI(){
-  const hasFP=window.PublicKeyCredential&&hasFingerprintCred();
-  document.getElementById('auth-fp-wrap').style.display     = hasFP?'block':'none';
-  document.getElementById('auth-reg-fp-wrap').style.display = (!hasFP&&window.PublicKeyCredential)?'block':'none';
-}
-
-function toggleAuthVis(){
-  const inp=document.getElementById('auth-input');
-  inp.type=inp.type==='password'?'text':'password';
-}
-
-// ── Mostrar pantalla de auth ──────────────────────────────────────────
-function showAuth(){
-  const screen=document.getElementById('auth-screen');
-  screen.style.display='flex';
-  updateAuthUI();
-
-  // Si hay huella registrada, intentarla automáticamente
-  if(window.PublicKeyCredential && hasFingerprintCred()){
-    // Pequeño delay para que la pantalla se muestre primero
-    setTimeout(()=>tryFingerprint(), 400);
-  } else {
-    setTimeout(()=>document.getElementById('auth-input').focus(), 150);
-  }
 }
 
 // Shake keyframe
