@@ -1251,6 +1251,8 @@ let currentPage='resumen';
 
 /* ═══════════ INIT ═══════════ */
 async function init(){
+  // Limpiar claves de versiones anteriores que pueden interferir
+  ['ta_auth_ts','ta_fp_cred','ta_fp_cred_v2','ta_auth_token','ta_use_biometric','ta_no_biometric'].forEach(k=>localStorage.removeItem(k));
   // Siempre pedir autenticación al abrir la app
   showAuth();
 }
@@ -2015,11 +2017,12 @@ document.querySelectorAll('.modal-overlay').forEach(o=>o.addEventListener('click
 // ⚠️ Cambiá este hash por el de tu contraseña.
 // Para generarlo: abrí la consola del navegador y ejecutá:
 // ─── CONFIGURACIÓN ───────────────────────────────────────────────────
-// Para cambiar la contraseña, generá el hash en la consola del navegador:
+// Para cambiar la contraseña, generá el hash en la consola:
 // crypto.subtle.digest('SHA-256', new TextEncoder().encode('tuContraseña'))
 //   .then(b => console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')))
-const PASS_HASH    = '680e45a444ca4dcc0a0275779d08074f17c4a2114c46ee1dc3e42d0f8b6cdd03';
-const AUTH_TOKEN_KEY = 'ta_auth_token'; // token que indica que el dispositivo ya fue verificado
+const PASS_HASH      = '680e45a444ca4dcc0a0275779d08074f17c4a2114c46ee1dc3e42d0f8b6cdd03';
+const USE_BIO_KEY    = 'ta_use_bio';   // 'yes' | 'no' | null
+const BIO_CRED_KEY   = 'ta_bio_cred';  // credencial WebAuthn guardada
 // ─────────────────────────────────────────────────────────────────────
 
 async function hashPassword(pwd){
@@ -2027,54 +2030,71 @@ async function hashPassword(pwd){
   return [...new Uint8Array(buf)].map(x=>x.toString(16).padStart(2,'0')).join('');
 }
 
-// Guardar/leer token de dispositivo verificado
-function saveAuthToken(){
-  const token = 'verified_' + Date.now();
-  try{ localStorage.setItem(AUTH_TOKEN_KEY, token); }catch(e){}
-  try{ sessionStorage.setItem(AUTH_TOKEN_KEY, token); }catch(e){}
+function b64(buf){
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
 }
-function hasAuthToken(){
-  return !!(localStorage.getItem(AUTH_TOKEN_KEY) || sessionStorage.getItem(AUTH_TOKEN_KEY));
-}
-function clearAuthToken(){
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-  sessionStorage.removeItem(AUTH_TOKEN_KEY);
+function unb64(s){
+  return Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
 }
 
-// ── Verificar huella con API nativa del dispositivo ───────────────────
-// Usa UserVerifyingPlatformAuthenticator — disponible en Android/iOS
-// sin necesidad de registrar credencial WebAuthn
-async function verifyWithBiometric(){
-  // Método 1: verificación de plataforma directa (Chrome Android 108+)
-  if(window.PublicKeyCredential &&
-     typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function'){
-    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-    if(available){
-      try{
-        // Crear credencial temporal solo para verificar biometría
-        const challenge = crypto.getRandomValues(new Uint8Array(32));
-        const userId    = new TextEncoder().encode('tarjetapp-user');
-        await navigator.credentials.create({ publicKey:{
-          challenge,
-          rp:{ name:'TarjetApp' }, // sin rpId — usa el dominio actual automáticamente
-          user:{ id:userId, name:'usuario', displayName:'Usuario' },
-          pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
-          authenticatorSelection:{
-            authenticatorAttachment:'platform',
-            userVerification:'required',
-            residentKey:'discouraged',
-          },
-          timeout:60000,
-        }});
-        return true; // biometría verificada
-      }catch(e){
-        if(e.name==='NotAllowedError') return null; // usuario canceló
-        console.warn('biometric verify error:', e.name, e.message);
-        return false;
-      }
-    }
+// ── Soporte biométrico ────────────────────────────────────────────────
+async function biometricSupported(){
+  if(!window.PublicKeyCredential) return false;
+  if(typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== 'function') return false;
+  return PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+}
+
+// ── REGISTRAR credencial biométrica (se hace una sola vez) ────────────
+async function registerBiometric(){
+  try{
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    // userId fijo — mismo usuario siempre en este dispositivo
+    const userId = new TextEncoder().encode('tarjetapp-fixed-user');
+    const cred = await navigator.credentials.create({ publicKey:{
+      challenge,
+      rp:{ name: RP_NAME },   // sin rpId → usa location.hostname automáticamente
+      user:{ id:userId, name:'usuario', displayName:'TarjetApp' },
+      pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
+      authenticatorSelection:{
+        authenticatorAttachment:'platform',
+        userVerification:'required',
+        residentKey:'preferred',
+      },
+      timeout:60000,
+    }});
+    // Guardar el rawId para usarlo luego en get()
+    const credData = { id: b64(cred.rawId), type: cred.type };
+    localStorage.setItem(BIO_CRED_KEY, JSON.stringify(credData));
+    localStorage.setItem(USE_BIO_KEY, 'yes');
+    return true;
+  }catch(e){
+    console.warn('registerBiometric:', e.name, e.message);
+    return false;
   }
-  return false; // no disponible
+}
+
+// ── VERIFICAR con biometría ───────────────────────────────────────────
+async function verifyBiometric(){
+  const raw = localStorage.getItem(BIO_CRED_KEY);
+  if(!raw) return 'no-cred';
+  const { id } = JSON.parse(raw);
+  try{
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    await navigator.credentials.get({ publicKey:{
+      challenge,
+      // sin rpId → usa location.hostname automáticamente (igual que el registro)
+      allowCredentials:[{ id: unb64(id), type:'public-key' }],
+      userVerification:'required',
+      timeout:60000,
+    }});
+    return 'ok';
+  }catch(e){
+    console.warn('verifyBiometric:', e.name, e.message);
+    if(e.name==='NotAllowedError') return 'cancelled';
+    if(e.name==='NotFoundError' || e.name==='InvalidStateError') return 'not-found';
+    return 'error';
+  }
 }
 
 // ── Login con contraseña ──────────────────────────────────────────────
@@ -2084,89 +2104,97 @@ async function tryLogin(){
   errEl.textContent='';
   if(!val){ errEl.textContent='Ingresá tu contraseña'; return; }
   const hash = await hashPassword(val);
-  if(hash!==PASS_HASH){
+  if(hash !== PASS_HASH){
     errEl.textContent='Contraseña incorrecta';
     document.getElementById('auth-input').value='';
     document.getElementById('auth-input').focus();
-    const card=document.getElementById('auth-card-password');
+    const card = document.getElementById('auth-card-password');
     card.style.animation='shake .4s ease';
     setTimeout(()=>card.style.animation='',400);
     return;
   }
-  // Contraseña correcta — guardar token y verificar si tiene biometría
-  saveAuthToken();
-  if(!hasShownBiometricOffer){
-    const biometricAvailable = window.PublicKeyCredential &&
-      typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable==='function'
-      ? await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-      : false;
-    if(biometricAvailable){
-      showFpOfferUI();
-      return;
-    }
+  // Contraseña correcta
+  const usesBio = localStorage.getItem(USE_BIO_KEY);
+  if(usesBio === 'yes'){
+    // Ya eligió usar biometría — entrar directo (ya verificó con contraseña)
+    enterApp();
+  } else if(usesBio === 'no'){
+    // Eligió no usar biometría
+    enterApp();
+  } else {
+    // Primera vez — ofrecer configurar biometría
+    const supported = await biometricSupported();
+    if(supported) showFpOfferUI();
+    else enterApp();
   }
-  enterApp();
 }
 
-let hasShownBiometricOffer = false;
+// ── Autenticar con huella ─────────────────────────────────────────────
+async function tryFingerprint(){
+  const btn = document.getElementById('auth-fp-btn');
+  const lbl = document.getElementById('auth-fp-label');
+  btn.disabled=true; lbl.textContent='Verificando…';
 
-// ── Ofrecer biometría con UI propia ──────────────────────────────────
+  const result = await verifyBiometric();
+
+  if(result === 'ok'){
+    enterApp();
+    return;
+  } else if(result === 'not-found'){
+    // Credencial perdida — re-registrar
+    showToast('Huella no encontrada, re-registrando…','error');
+    localStorage.removeItem(BIO_CRED_KEY);
+    localStorage.removeItem(USE_BIO_KEY);
+    updateAuthUI();
+  } else if(result === 'no-cred'){
+    // Nunca se registró — ofrecer
+    const supported = await biometricSupported();
+    if(supported) showFpOfferUI();
+  }
+  // Si canceló → no hacer nada, pantalla sigue visible
+  btn.disabled=false; lbl.textContent='Usar huella dactilar';
+}
+
+// ── Ofrecer registrar biometría ───────────────────────────────────────
 function showFpOfferUI(){
-  hasShownBiometricOffer = true;
   document.getElementById('auth-card-password').style.display='none';
   document.getElementById('auth-fp-wrap').style.display='none';
-  document.getElementById('auth-reg-fp-wrap').style.display='none';
-  let offerDiv=document.getElementById('auth-fp-offer');
+  let offerDiv = document.getElementById('auth-fp-offer');
   if(!offerDiv){
-    offerDiv=document.createElement('div');
-    offerDiv.id='auth-fp-offer';
-    offerDiv.className='auth-card';
+    offerDiv = document.createElement('div');
+    offerDiv.id = 'auth-fp-offer';
+    offerDiv.className = 'auth-card';
     offerDiv.style.cssText='display:flex;flex-direction:column;gap:12px;';
     offerDiv.innerHTML=`
       <div style="text-align:center;font-size:44px;margin-bottom:4px;">🔐</div>
       <div style="font-family:'Outfit',sans-serif;font-size:16px;font-weight:700;text-align:center;">¿Usar huella o Face ID?</div>
       <div style="font-size:13px;color:var(--text3);text-align:center;line-height:1.6;">
-        La próxima vez que abras la app te pedirá la huella directamente, sin contraseña.
+        Activá tu huella para entrar sin contraseña la próxima vez.
       </div>
-      <button class="btn btn-primary" id="fp-offer-yes" style="width:100%;justify-content:center;">🔐 Sí, usar huella</button>
+      <button class="btn btn-primary" id="fp-offer-yes" style="width:100%;justify-content:center;">🔐 Activar huella</button>
       <button class="btn btn-ghost" id="fp-offer-no" style="width:100%;justify-content:center;">No por ahora</button>
     `;
     document.querySelector('.auth-wrap').appendChild(offerDiv);
   }
   offerDiv.style.display='flex';
+
   document.getElementById('fp-offer-no').onclick=()=>{
-    // Guardar preferencia de no usar biometría
-    localStorage.setItem('ta_no_biometric','1');
+    localStorage.setItem(USE_BIO_KEY,'no');
     enterApp();
   };
   document.getElementById('fp-offer-yes').onclick=async()=>{
-    // Guardar preferencia de usar biometría
-    localStorage.setItem('ta_use_biometric','1');
-    localStorage.removeItem('ta_no_biometric');
-    enterApp();
+    const btn=document.getElementById('fp-offer-yes');
+    btn.disabled=true; btn.textContent='Activá tu huella ahora…';
+    const ok = await registerBiometric();
+    if(ok){
+      showToast('¡Huella activada! La próxima vez entrás directo 🔐');
+      enterApp();
+    } else {
+      showToast('No se pudo activar. Intentalo más tarde','error');
+      localStorage.setItem(USE_BIO_KEY,'no');
+      enterApp();
+    }
   };
-}
-
-// ── Autenticar con huella al abrir la app ─────────────────────────────
-async function tryFingerprint(){
-  const btn = document.getElementById('auth-fp-btn');
-  const lbl = document.getElementById('auth-fp-label');
-  if(btn) btn.disabled=true;
-  if(lbl) lbl.textContent='Verificando…';
-
-  const result = await verifyWithBiometric();
-
-  if(result===true){
-    saveAuthToken();
-    enterApp();
-  }else if(result===null){
-    // usuario canceló — no hacer nada, deja la pantalla visible
-  }else{
-    // falló o no disponible — mostrar contraseña
-    showToast('Usá la contraseña para ingresar','error');
-  }
-  if(btn) btn.disabled=false;
-  if(lbl) lbl.textContent='Usar huella dactilar';
 }
 
 function toggleAuthVis(){
@@ -2175,10 +2203,9 @@ function toggleAuthVis(){
 }
 
 function updateAuthUI(){
-  const useBiometric = localStorage.getItem('ta_use_biometric')==='1'
-                    && localStorage.getItem('ta_no_biometric')!=='1';
-  document.getElementById('auth-fp-wrap').style.display     = useBiometric?'block':'none';
-  document.getElementById('auth-reg-fp-wrap').style.display = 'none'; // ya no se necesita
+  const usesBio = localStorage.getItem(USE_BIO_KEY)==='yes'
+               && !!localStorage.getItem(BIO_CRED_KEY);
+  document.getElementById('auth-fp-wrap').style.display = usesBio?'block':'none';
 }
 
 // ── Mostrar pantalla de auth ──────────────────────────────────────────
@@ -2186,13 +2213,12 @@ function showAuth(){
   const screen=document.getElementById('auth-screen');
   screen.style.display='flex';
   updateAuthUI();
-
-  // Si el usuario activó biometría, dispararla automáticamente
-  const useBiometric = localStorage.getItem('ta_use_biometric')==='1'
-                    && localStorage.getItem('ta_no_biometric')!=='1';
-  if(useBiometric){
-    setTimeout(()=>tryFingerprint(), 400);
-  }else{
+  const usesBio = localStorage.getItem(USE_BIO_KEY)==='yes'
+               && !!localStorage.getItem(BIO_CRED_KEY);
+  if(usesBio){
+    // Disparar huella automáticamente
+    setTimeout(()=>tryFingerprint(), 500);
+  } else {
     setTimeout(()=>{ const i=document.getElementById('auth-input'); if(i)i.focus(); },150);
   }
 }
@@ -2213,6 +2239,8 @@ function enterApp(){
     loadAndRender();
   },350);
 }
+
+const RP_NAME='TarjetApp';
 
 // Shake keyframe
 const shakeStyle=document.createElement('style');
