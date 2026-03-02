@@ -1359,13 +1359,22 @@ function getPeriodRange(tid,mk){
 function buildAllPeriods(){
   const now=new Date();
   const mkNow=getMonthKey(now.getFullYear(),now.getMonth());
-  const mk2back=getMonthKey(now.getFullYear(),now.getMonth()-2);
   const res=new Set();
-  cierres.forEach(c=>{if(c.mes_key>=mk2back&&c.mes_key<=mkNow)res.add(c.mes_key);});
+
+  // Siempre incluir el mes actual y los 2 meses anteriores
+  for(let i=2;i>=0;i--){
+    res.add(getMonthKey(now.getFullYear(),now.getMonth()-i));
+  }
+
+  // Agregar meses con cierres configurados (históricos)
+  cierres.forEach(c=>{if(c.mes_key)res.add(c.mes_key);});
+
+  // Agregar meses futuros que tengan cuotas distribuidas
   gastos.forEach(g=>{
     const dist=getCuotasPorPeriodo(g);
-    Object.keys(dist).forEach(mk=>{if(mk>mkNow)res.add(mk);});
+    Object.keys(dist).forEach(mk=>{res.add(mk);});
   });
+
   allPeriods=[...res].sort();
 }
 
