@@ -1206,7 +1206,7 @@ select option{background:var(--bg2);color:var(--text);}
         <div class="form-row">
           <div>
             <label class="field-label">Monto total ($)</label>
-            <input id="g-monto" type="number" placeholder="0.00" min="0" step="0.01" oninput="previewCuotas()">
+            <input id="g-monto" type="number" placeholder="0.00" step="0.01" oninput="previewCuotas()">
           </div>
           <div>
             <label class="field-label">Cuotas</label>
@@ -1920,7 +1920,7 @@ async function saveGasto(){
   const nota=document.getElementById('g-nota').value.trim();
   if(!descripcion){showToast('Ingresá una descripción','error');return;}
   if(!fecha){showToast('Ingresá la fecha','error');return;}
-  if(!monto||monto<=0){showToast('Ingresá un monto válido','error');return;}
+  if(monto===0||isNaN(monto)){showToast('Ingresá un monto válido','error');return;}
   const btn=document.getElementById('btn-save-gasto');
   const isEditing=!!editingGastoId;
   btn.disabled=true;btn.innerHTML='<div class="loader"></div>';
