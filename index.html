@@ -1321,7 +1321,7 @@ function showPage(name,el,mobId){
 }
 
 /* ═══════════ PERIOD LOGIC ═══════════ */
-function getMonthKey(y,m){return`${y}-${String(m+1).padStart(2,'0')}`;}
+function getMonthKey(y,m){const d=new Date(y,m,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
 function nextMk(mk){const[y,m]=mk.split('-').map(Number);const d=new Date(y,m,1);return getMonthKey(d.getFullYear(),d.getMonth());}
 function getCierreDia(tid,mk){const c=cierres.find(c=>c.tarjeta_id===tid&&c.mes_key===mk);return c?c.dia:null;}
 
@@ -1353,19 +1353,32 @@ function getCuotasPorPeriodo(g){
 }
 
 // getPeriodRange: dado un mes de PAGO (mk), devuelve el rango de fechas de gastos
+// Modelo DB: mes_key=2026-01 dia=29 significa "cierre el 29 de Enero, pago en Febrero"
+// Para pago Febrero (mk=2026-02):
+//   hasta = 29 Ene (cierre en mes_key=2026-01)
+//   desde = dia_siguiente_al_cierre_anterior (cierre en mes_key=2025-12, o el anterior disponible)
 function getPeriodRange(tid,mk){
   const[y,m]=mk.split('-').map(Number);
-  // El cierre esta en el mes anterior al de pago
-  const mkCierre=getMonthKey(y,m-1);
-  const mkCierreAnt=getMonthKey(y,m-2);
-  const dCierre=getCierreDia(tid,mkCierre);
-  const dCierreAnt=getCierreDia(tid,mkCierreAnt);
-  if(dCierre&&dCierreAnt){
-    const desde=new Date(y,m-2,dCierreAnt+1);
-    const hasta=new Date(y,m-1,dCierre);
+  // m es 1-based (2=Febrero). getMonthKey espera indice 0-based.
+  // Cierre que genera este pago: mes anterior al pago = mes (m-1), indice 0-based = (m-2)
+  const mkCierreActual=getMonthKey(y,m-2);
+  const dCierreActual=getCierreDia(tid,mkCierreActual);
+  // Cierre anterior: dos meses antes del pago = mes (m-2), indice 0-based = (m-3)
+  const mkCierreAnterior=getMonthKey(y,m-3);
+  const dCierreAnterior=getCierreDia(tid,mkCierreAnterior);
+
+  if(dCierreActual&&dCierreAnterior){
+    // hasta: dia de cierre del mes anterior al pago  (new Date mes 0-based = m-2)
+    const hasta=new Date(y,m-2,dCierreActual);
+    // desde: dia siguiente al cierre anterior        (new Date mes 0-based = m-3)
+    const desde=new Date(y,m-3,dCierreAnterior+1);
     return{desde,hasta,exacto:true};
   }
-  // Sin cierres: mes anterior completo como aproximacion
+  if(dCierreActual){
+    const hasta=new Date(y,m-2,dCierreActual);
+    const desde=new Date(y,m-2,1);
+    return{desde,hasta,exacto:false};
+  }
   return{desde:new Date(y,m-2,1),hasta:new Date(y,m-1,0),exacto:false};
 }
 
