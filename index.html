@@ -455,11 +455,24 @@ body::before{
 }
 .cierres-label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--v3);margin-bottom:3px;}
 .cierres-bank{font-family:'Outfit',sans-serif;font-size:16px;font-weight:800;}
-.cierres-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding:20px 24px;}
+.cierres-grid{padding:0 16px 20px;}
+.cierres-year-nav{display:flex;gap:8px;flex-wrap:wrap;padding:16px 0 14px;border-bottom:1px solid var(--border);margin-bottom:16px;}
+.cierre-year-btn{
+  padding:7px 18px;border-radius:var(--r-sm);border:1px solid var(--border2);
+  background:var(--surface);color:var(--text3);font-size:13px;font-weight:700;
+  cursor:pointer;font-family:'Outfit',sans-serif;transition:all var(--t);
+}
+.cierre-year-btn:hover{color:var(--text);border-color:var(--border2);}
+.cierre-year-btn.active{background:rgba(124,58,237,.2);color:var(--v3);border-color:rgba(124,58,237,.4);}
+.cierres-months-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+@media(max-width:600px){.cierres-months-grid{grid-template-columns:repeat(3,1fr);}}
+@media(max-width:400px){.cierres-months-grid{grid-template-columns:repeat(2,1fr);}}
 .cierre-cell{
   background:rgba(255,255,255,.03);border:1px solid var(--border);
   border-radius:var(--r-sm);padding:14px;transition:all var(--t);
 }
+.cierre-cell-current{border-color:rgba(124,58,237,.4);background:rgba(124,58,237,.07);}
+.cierre-cell-current .cierre-month{color:var(--v3);}
 .cierre-cell:focus-within{border-color:rgba(124,58,237,.5);background:rgba(124,58,237,.05);}
 .cierre-month{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);margin-bottom:10px;}
 .cierre-input-row{display:flex;align-items:center;gap:6px;}
@@ -1323,11 +1336,38 @@ function showPage(name,el,mobId){
 /* ═══════════ PERIOD LOGIC ═══════════ */
 function getMonthKey(y,m){const d=new Date(y,m,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
 function nextMk(mk){const[y,m]=mk.split('-').map(Number);const d=new Date(y,m,1);return getMonthKey(d.getFullYear(),d.getMonth());}
+function prevMk(mk){const[y,m]=mk.split('-').map(Number);const d=new Date(y,m-2,1);return getMonthKey(d.getFullYear(),d.getMonth());}
 function getCierreDia(tid,mk){const c=cierres.find(c=>c.tarjeta_id===tid&&c.mes_key===mk);return c?c.dia:null;}
 
-// Dado un gasto, devuelve el mes_key del PAGO (mes siguiente al cierre que lo captura)
+/*
+ * MODELO DE DATOS:
+ * mes_key='2025-12' dia=26 → cierre el 26 Dic 2025 → ese cierre pertenece al período ENERO 2026
+ * mes_key='2026-01' dia=29 → cierre el 29 Ene 2026 → ese cierre pertenece al período FEBRERO 2026
+ *
+ * Período de PAGO "Febrero 2026":
+ *   - Termina en: cierre de Enero 2026 (29 Ene)
+ *   - Empieza en: día siguiente al cierre de Diciembre 2025 (27 Dic)
+ *
+ * Si falta el cierre anterior: desde = hasta_cierre - 30 días (estimado)
+ * Si falta el cierre actual:   hasta = desde_inicio + 30 días (estimado)
+ */
+
+// Buscar el cierre más cercano hacia atrás desde mk (inclusive), hasta maxBusqueda meses
+function buscarCierreHaciaAtras(tid, mk, maxBusqueda){
+  let cur=mk;
+  for(let i=0;i<maxBusqueda;i++){
+    const d=getCierreDia(tid,cur);
+    if(d) return {mk:cur, dia:d};
+    cur=prevMk(cur);
+  }
+  return null;
+}
+
+// Para un gasto en fechaStr con tarjeta tid,
+// devuelve el mes_key del PERÍODO DE PAGO que lo contiene
 function getCierreForFecha(tid,fechaStr){
   const fc=new Date(fechaStr+'T12:00:00');
+  // Buscar el primer cierre cuya fecha >= fecha del gasto
   for(let i=0;i<36;i++){
     const d=new Date(fc.getFullYear(),fc.getMonth()+i,1);
     const mk=getMonthKey(d.getFullYear(),d.getMonth());
@@ -1335,11 +1375,11 @@ function getCierreForFecha(tid,fechaStr){
     if(!dia)continue;
     const fechaCierre=new Date(d.getFullYear(),d.getMonth(),dia);
     if(fechaCierre>=fc){
-      // El periodo de PAGO es el mes siguiente al del cierre
+      // El período de pago es el MES SIGUIENTE al mes donde está configurado ese cierre
       return nextMk(mk);
     }
   }
-  // Sin cierre: el pago es el mes siguiente al de la compra
+  // Sin cierres configurados: pago = mes siguiente al de la compra
   return nextMk(getMonthKey(fc.getFullYear(),fc.getMonth()));
 }
 
@@ -1352,34 +1392,62 @@ function getCuotasPorPeriodo(g){
   return r;
 }
 
-// getPeriodRange: dado un mes de PAGO (mk), devuelve el rango de fechas de gastos
-// Modelo DB: mes_key=2026-01 dia=29 significa "cierre el 29 de Enero, pago en Febrero"
-// Para pago Febrero (mk=2026-02):
-//   hasta = 29 Ene (cierre en mes_key=2026-01)
-//   desde = dia_siguiente_al_cierre_anterior (cierre en mes_key=2025-12, o el anterior disponible)
-function getPeriodRange(tid,mk){
-  const[y,m]=mk.split('-').map(Number);
-  // m es 1-based (2=Febrero). getMonthKey espera indice 0-based.
-  // Cierre que genera este pago: mes anterior al pago = mes (m-1), indice 0-based = (m-2)
-  const mkCierreActual=getMonthKey(y,m-2);
-  const dCierreActual=getCierreDia(tid,mkCierreActual);
-  // Cierre anterior: dos meses antes del pago = mes (m-2), indice 0-based = (m-3)
-  const mkCierreAnterior=getMonthKey(y,m-3);
-  const dCierreAnterior=getCierreDia(tid,mkCierreAnterior);
+/*
+ * getPeriodRange(tid, mkPago):
+ * mkPago = mes en que se PAGA (ej: '2026-02' = Febrero 2026)
+ * El cierre que termina ese período está en el mes ANTERIOR al de pago
+ * (ej: cierre de Enero 2026 = mes_key '2026-01')
+ * El cierre que inicia ese período está dos meses antes del pago
+ * (ej: cierre de Diciembre 2025 = mes_key '2025-12')
+ *
+ * Si falta cierre anterior: desde = fechaCierreActual - 30 días
+ * Si falta cierre actual:   hasta = fechaCierreAnterior + 30 días
+ */
+function getPeriodRange(tid,mkPago){
+  // mkCierreActual = mes_key del cierre que TERMINA el período de pago
+  // = mes anterior al de pago
+  const mkCierreActual = prevMk(mkPago);
+  const dCierreActual  = getCierreDia(tid, mkCierreActual);
 
-  if(dCierreActual&&dCierreAnterior){
-    // hasta: dia de cierre del mes anterior al pago  (new Date mes 0-based = m-2)
-    const hasta=new Date(y,m-2,dCierreActual);
-    // desde: dia siguiente al cierre anterior        (new Date mes 0-based = m-3)
-    const desde=new Date(y,m-3,dCierreAnterior+1);
-    return{desde,hasta,exacto:true};
-  }
+  // mkCierreAnterior = mes_key del cierre que INICIA el período de pago
+  // = dos meses antes del de pago = mes anterior al cierre actual
+  const mkCierreAnterior = prevMk(mkCierreActual);
+  const dCierreAnterior  = getCierreDia(tid, mkCierreAnterior);
+
+  // Construir fecha de hasta (fin del período)
+  let hasta, hastaExacto;
   if(dCierreActual){
-    const hasta=new Date(y,m-2,dCierreActual);
-    const desde=new Date(y,m-2,1);
-    return{desde,hasta,exacto:false};
+    const[cy,cm]=mkCierreActual.split('-').map(Number);
+    hasta=new Date(cy,cm-1,dCierreActual);
+    hastaExacto=true;
+  } else {
+    // Sin cierre actual: estimar sumando 30 días al inicio
+    hasta=null; hastaExacto=false;
   }
-  return{desde:new Date(y,m-2,1),hasta:new Date(y,m-1,0),exacto:false};
+
+  // Construir fecha de desde (inicio del período = día siguiente al cierre anterior)
+  let desde, desdeExacto;
+  if(dCierreAnterior){
+    const[py,pm]=mkCierreAnterior.split('-').map(Number);
+    desde=new Date(py,pm-1,dCierreAnterior+1);
+    desdeExacto=true;
+  } else if(hasta){
+    // Sin cierre anterior: estimar restando 30 días al cierre actual
+    desde=new Date(hasta.getTime()-30*24*60*60*1000);
+    desdeExacto=false;
+  } else {
+    // Sin ningún cierre configurado
+    const[py,pm]=mkPago.split('-').map(Number);
+    desde=new Date(py,pm-2,1);
+    desdeExacto=false;
+  }
+
+  // Si no teníamos hasta, estimarlo sumando 30 días al desde
+  if(!hasta){
+    hasta=new Date(desde.getTime()+30*24*60*60*1000);
+  }
+
+  return{desde,hasta,exacto:hastaExacto&&desdeExacto};
 }
 
 function buildAllPeriods(){
@@ -1983,24 +2051,51 @@ function openCierres(tid){
 
 function renderCierresGrid(tid){
   const now=new Date();
+  const curYear=now.getFullYear();
+  const MESES_FULL=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   const MESES=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-  let html='';
-  for(let o=-3;o<=9;o++){
-    const d=new Date(now.getFullYear(),now.getMonth()+o,1);
-    const mk=getMonthKey(d.getFullYear(),d.getMonth());
+  const START_YEAR=2025;
+
+  // Determinar años disponibles: desde 2025 hasta año siguiente
+  const years=[];
+  for(let y=START_YEAR;y<=curYear+1;y++) years.push(y);
+
+  // Año activo: el del mes actual
+  const activeYear=parseInt(document.getElementById('cierres-year-sel')?.value||curYear);
+
+  // Selector de año
+  const yearSelector=`<div class="cierres-year-nav">
+    ${years.map(y=>`<button class="cierre-year-btn${y===activeYear?' active':''}" onclick="setCierresYear('${tid}',${y})">${y}</button>`).join('')}
+  </div>`;
+
+  // Grid de los 12 meses del año seleccionado
+  let gridHTML='';
+  for(let m=0;m<12;m++){
+    const mk=getMonthKey(activeYear,m);
     const cierre=cierres.find(c=>c.tarjeta_id===tid&&c.mes_key===mk);
     const dia=cierre?cierre.dia:'';
-    html+=`<div class="cierre-cell">
-      <div class="cierre-month">${MESES[d.getMonth()]} ${d.getFullYear()}</div>
+    const isCurrent=activeYear===curYear&&m===now.getMonth();
+    gridHTML+=`<div class="cierre-cell${isCurrent?' cierre-cell-current':''}">
+      <div class="cierre-month">${MESES[m]}</div>
       <div class="cierre-input-row">
         <input type="number" min="1" max="31" placeholder="—"
-          style="width:62px;padding:7px 10px;font-size:14px;font-weight:700;" value="${dia}"
+          style="width:58px;padding:6px 8px;font-size:14px;font-weight:700;" value="${dia}"
           onchange="saveCierre('${tid}','${mk}',this.value,'${cierre?cierre.id:''}')">
-        <span class="cierre-val" id="cv-${mk}">${dia?'día '+dia:''}</span>
       </div>
+      ${dia?`<div class="cierre-val">día ${dia}</div>`:'<div class="cierre-val" style="opacity:.3">—</div>'}
     </div>`;
   }
-  document.getElementById('cierres-grid').innerHTML=html;
+
+  document.getElementById('cierres-grid').innerHTML=`
+    <input type="hidden" id="cierres-year-sel" value="${activeYear}">
+    ${yearSelector}
+    <div class="cierres-months-grid">${gridHTML}</div>
+  `;
+}
+
+function setCierresYear(tid,year){
+  document.getElementById('cierres-year-sel').value=year;
+  renderCierresGrid(tid);
 }
 
 async function saveCierre(tid,mk,valor,existingId){
