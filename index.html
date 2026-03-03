@@ -396,6 +396,7 @@ body::before{
 .pill{display:inline-flex;align-items:center;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.3px;}
 .pill-v{background:rgba(124,58,237,.2);color:var(--v3);}
 .pill-c{background:rgba(6,182,212,.15);color:var(--c2);}
+.pill-cat{background:rgba(255,255,255,.07);color:var(--text2);border:1px solid var(--border2);}
 .pill-em{background:rgba(16,185,129,.15);color:var(--em2);}
 .pill-gray{background:rgba(255,255,255,.07);color:var(--text2);}
 
@@ -1582,11 +1583,13 @@ function renderResumen(){
   const rows=gEP.map(({g,monto})=>{
     const cn=Object.keys(getCuotasPorPeriodo(g)).sort().indexOf(mk)+1;
     const isSingle=g.cuotas===1;
+    const catPill=g.categoria?`<span class="pill pill-cat" style="font-size:10px;padding:2px 8px;">${g.categoria}</span>`:'<span style="color:var(--text3);font-size:12px;">—</span>';
     return`<tr>
       <td>
-        <div style="font-weight:600;">${g.categoria?g.categoria+' ':''}${g.descripcion}</div>
+        <div style="font-weight:600;">${g.descripcion||'—'}</div>
         ${g.nota?`<div style="font-size:11px;color:var(--text3);margin-top:2px;">${g.nota}</div>`:''}
       </td>
+      <td>${catPill}</td>
       <td style="color:var(--text3);">${fDate(new Date(g.fecha+'T12:00:00'))}</td>
       <td><span class="pill ${isSingle?'pill-em':'pill-v'}">${isSingle?'1 pago':`${cn}/${g.cuotas}`}</span></td>
       <td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;">$${fmt(monto)}</td>
@@ -1608,10 +1611,10 @@ function renderResumen(){
       </div>
     </div>
     ${gEP.length?`<table class="data-table">
-      <thead><tr><th>Concepto</th><th>Fecha compra</th><th>Cuotas</th><th style="text-align:right;">Monto</th></tr></thead>
+      <thead><tr><th>Descripción</th><th>Categoría</th><th>Fecha compra</th><th>Cuotas</th><th style="text-align:right;">Monto</th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr>
-        <td colspan="3" style="font-size:10px;letter-spacing:1px;text-transform:uppercase;">Total tarjeta</td>
+        <td colspan="4" style="font-size:10px;letter-spacing:1px;text-transform:uppercase;">Total tarjeta</td>
         <td style="text-align:right;">$${fmt(total)}</td>
       </tr></tfoot>
     </table>`:`<div style="padding:24px;color:var(--text3);font-size:13px;text-align:center;">Sin gastos registrados en este período</div>`}
